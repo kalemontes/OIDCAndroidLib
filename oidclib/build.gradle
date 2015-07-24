@@ -1,0 +1,60 @@
+apply plugin: 'com.android.library'
+
+android {
+    compileSdkVersion 22
+    buildToolsVersion "23.0.0 rc2"
+
+    defaultConfig {
+        minSdkVersion 9
+        targetSdkVersion 22
+        versionCode 1
+        versionName "1.0"
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+dependencies {
+    compile fileTree(dir: 'libs', include: ['*.jar'])
+
+    // For backwards compatibility, not necessarily needed
+    compile 'com.android.support:appcompat-v7:22.2.1'
+    compile 'com.android.support:design:22.2.1'
+
+    // Google's OAuth library for OpenID Connect
+    // See https://code.google.com/p/google-oauth-java-client/wiki/Setup
+    compile ('com.google.oauth-client:google-oauth-client:1.20.0') {
+        exclude group: 'xpp3', module: 'xpp3'
+        exclude group: 'org.apache.httpcomponents', module: 'httpclient'
+        exclude group: 'junit', module: 'junit'
+        exclude group: 'com.google.android', module: 'android'
+        exclude group: 'com.google.guava', module: 'guava-jdk5'
+    }
+
+    // Google's JSON parsing, could be replaced with Jackson
+    compile ('com.google.api-client:google-api-client-gson:1.20.0') {
+        exclude group: 'xpp3', module: 'xpp3'
+        exclude group: 'org.apache.httpcomponents', module: 'httpclient'
+        exclude group: 'junit', module: 'junit'
+        exclude group: 'com.google.android', module: 'android'
+        exclude group: 'com.google.guava', module: 'guava-jdk5'
+    }
+
+    // For backwards compatibility, not necessarily needed
+    compile ('com.google.api-client:google-api-client-android:1.20.0') {
+        exclude group: 'xpp3', module: 'xpp3'
+        exclude group: 'org.apache.httpcomponents', module: 'httpclient'
+        exclude group: 'junit', module: 'junit'
+        exclude group: 'com.google.android', module: 'android'
+        exclude group: 'com.google.guava', module: 'guava-jdk5'
+    }
+
+    // Easier HTTP requests, not necessarily needed
+    compile ('com.github.kevinsawicki:http-request:6.0') {
+        exclude group: 'junit', module: 'junit'
+    }
+}

@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Base.Theme.OidcLib" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="colorPrimary">@color/oidclib_primary</item>
+
+        <!--   darker variant for the status bar and contextual app bars -->
+        <item name="colorPrimaryDark">@color/oidclib_primary_dark</item>
+
+        <!--   theme UI controls like checkboxes and text fields e.g. FloatActionButton -->
+        <item name="colorAccent">@color/oidclib_accent</item>
+
+        <!-- Title Text Color -->
+        <item name="android:textColorPrimary">@color/oidclib_primary_text</item>
+
+        <!-- color of the menu overflow icon (three vertical dots) -->
+        <item name="android:textColorSecondary">@color/oidclib_secondary_text</item>
+
+        <item name="android:windowBackground">@color/window_background</item>
+    </style>
+
+    <style name="Base.Theme.OidcLib.EditText" parent="Widget.AppCompat.EditText">
+        <item name="android:backgroundTint">@color/oidclib_primary</item>
+        <item name="android:background">@color/oidclib_primary</item>
+        <item name="android:textColor">@color/oidclib_primary_text</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:textColorHint">@color/oidclib_secondary_text</item>
+        <item name="android:fontFamily">sans-serif-condensed</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:padding">20dp</item>
+        <item name="android:layout_marginTop">15dp</item>
+    </style>
+
+    <style name="Base.Theme.OidcLib.ButtonStyle" parent="Widget.AppCompat.Button">
+        <item name="colorButtonNormal">@color/oidc_button_color_selector</item>
+        <item name="android:textColor">@color/oidclib_primary_text</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:fontFamily">sans-serif-condensed</item>
+        <item name="android:padding">10pt</item>
+        <item name="android:layout_marginTop">20dp</item>
+    </style>
+
+    <style name="Base.Theme.OidcLib.TextView.SpinnerItem" parent="Widget.AppCompat.TextView.SpinnerItem">
+        <item name="android:backgroundTint">@color/oidclib_primary</item>
+        <item name="android:textColor">@color/oidclib_primary_text</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:fontFamily">sans-serif-condensed</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:padding">10dp</item>
+    </style>
+
+    <style name="Base.Theme.OidcLib.SpinnerStyle" parent="Widget.AppCompat.Spinner">
+        <item name="android:backgroundTint">@color/oidclib_primary</item>
+    </style>
+
+    <style name="Base.Theme.OidcLib.TextInputLayout.TextAppearance" parent="@android:style/TextAppearance">
+        <item name="android:textColor">@color/oidclib_accent</item>
+    </style>
+
+</resources>

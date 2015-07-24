@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="window_background">#FFFFFF</color>
+    <color name="oidclib_primary">#FFC107</color>
+    <color name="oidclib_primary_dark">#FFA000</color>
+    <color name="oidclib_primary_light">#FFECB3</color>
+    <color name="oidclib_accent">#FF6F00</color>
+    <color name="oidclib_primary_text">#FFFFFF</color>
+    <color name="oidclib_secondary_text">#f2f2f2</color>
+    <color name="oidclib_icons">#FFFFFF</color>
+    <color name="oidclib_divider">#a8a8a8</color>
+</resources>
