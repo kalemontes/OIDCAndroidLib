@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="app_name">OIDC Sample</string>
+    <string name="loginButtonText">Log in with OpenID Connect</string>
+    <string name="requestButton">Request protected Ressource</string>
+
+    <!-- TokensExpiredDialog -->
+    <string name="tokensExpiredDialogTitle">Tokens have expire</string>
+    <string name="tokensExpiredDialogMsg">You need to signin again to continue</string>
+    <string name="tokensExpiredDialogButton">SignIn</string>
+
+</resources>
