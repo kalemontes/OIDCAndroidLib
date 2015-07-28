@@ -3,12 +3,10 @@ package com.lnikkila.oidc.authenticator;
 import android.accounts.Account;
 import android.accounts.AccountAuthenticatorActivity;
 import android.accounts.AccountManager;
-import android.annotation.SuppressLint;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
-import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Build;
@@ -26,6 +24,7 @@ import android.webkit.WebViewClient;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.RelativeLayout;
 import android.widget.Spinner;
 import android.widget.TextView;
 
@@ -38,6 +37,7 @@ import com.lnikkila.oidc.R;
 import com.lnikkila.oidc.minsdkcompat.CompatUri;
 
 import java.io.IOException;
+import java.lang.ref.WeakReference;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
@@ -76,6 +76,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
     private Account account;
     private boolean isNewAccount;
 
+    /*package*/ RelativeLayout parentLayout;
     /*package*/ WebView webView;
     /*package*/ View clientFormLayout;
     /*package*/ TextInputLayout clientIdInputLayout;
@@ -92,7 +93,6 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
     private Config.Flows flowType;
     private Spinner flowTypeSpinner;
 
-    @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -112,117 +112,36 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         // In case that the needed OIDC options are not set, present form to set them in order to create the authentication URL
         boolean needsOptionsForm = extras.getBoolean(KEY_PRESENT_OPTS_FORM, true);
 
+        parentLayout = (RelativeLayout) findViewById(R.id.authenticatorActivityLayout);
+
         // Initialise the WebView
-        webView = (WebView) findViewById(R.id.WebView);
+        // see  http://stackoverflow.com/a/8011027/665823 of why we doing this :
+        webView = new WebView(this);
+        parentLayout.addView(webView, new RelativeLayout.LayoutParams(
+                                                            ViewGroup.LayoutParams.MATCH_PARENT,
+                                                            ViewGroup.LayoutParams.MATCH_PARENT));
+        //instead of this :
+        //webView = (WebView) findViewById(R.id.WebView);
 
-        //NOTE: Enable this if your authorisation page requires JavaScript
-        webView.getSettings().setJavaScriptEnabled(true);
+        //TODO: Enable this if your authorisation page requires JavaScript
+        //webView.getSettings().setJavaScriptEnabled(true);
+        webView.setWebViewClient(new AuthorizationWebViewClient());
 
-        webView.setWebViewClient(new WebViewClient() {
-            @Override
-            public void onPageStarted(WebView view, String urlString, Bitmap favicon) {
-                super.onPageStarted(view, urlString, favicon);
-
-                Uri url = Uri.parse(urlString);
-
-                Set<String> parameterNames;
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.HONEYCOMB) {
-                    parameterNames = CompatUri.getQueryParameterNames(url);
-                } else {
-                    parameterNames = url.getQueryParameterNames();
-                }
-                String extractedFragment = url.getEncodedFragment();
-
-                if (parameterNames.contains("error")) {
-                    view.stopLoading();
-
-                    // In case of an error, the `error` parameter contains an ASCII identifier, e.g.
-                    // "temporarily_unavailable" and the `error_description` *may* contain a
-                    // human-readable description of the error.
-                    //
-                    // For a list of the error identifiers, see
-                    // http://tools.ietf.org/html/rfc6749#section-4.1.2.1
-
-                    String error = url.getQueryParameter("error");
-                    String errorDescription = url.getQueryParameter("error_description");
-
-                    // If the user declines to authorise the app, there's no need to show an error
-                    // message.
-                    if (!error.equals("access_denied")) {
-                        showErrorDialog(String.format("Error code: %s\n\n%s", error,
-                                errorDescription));
-                    }
-                } else if (urlString.startsWith(redirectUrl)) {
-                    // We won't need to keep loading anymore. This also prevents errors when using
-                    // redirect URLs that don't have real protocols (like app://) that are just
-                    // used for identification purposes in native apps.
-                    view.stopLoading();
-
-                    switch (flowType) {
-                        case Implicit: {
-                            if (!TextUtils.isEmpty(extractedFragment)) {
-                                CreateIdTokenFromFragmentPartTask task = new CreateIdTokenFromFragmentPartTask();
-                                task.execute(extractedFragment);
-
-                            } else {
-                                Log.e(TAG, String.format(
-                                        "urlString '%1$s' doesn't contain fragment part; can't extract tokens",
-                                        urlString));
-                            }
-                            break;
-                        }
-                        case Hybrid: {
-                            if (!TextUtils.isEmpty(extractedFragment)) {
-                                RequestIdTokenFromFragmentPartTask task = new RequestIdTokenFromFragmentPartTask();
-                                task.execute(extractedFragment);
-
-                            } else {
-                                Log.e(TAG, String.format(
-                                        "urlString '%1$s' doesn't contain fragment part; can't request tokens",
-                                        urlString));
-                            }
-                            break;
-                        }
-                        case Code:
-                        default: {
-                            // The URL will contain a `code` parameter when the user has been authenticated
-                            if (parameterNames.contains("code")) {
-                                String authToken = url.getQueryParameter("code");
-
-                                // Request the ID token
-                                RequestIdTokenTask task = new RequestIdTokenTask();
-                                task.execute(authToken);
-                            } else {
-                                Log.e(TAG, String.format(
-                                        "urlString '%1$s' doesn't contain code param; can't extract authCode",
-                                        urlString));
-                            }
-                            break;
-                        }
-                    }
-                }
-                // else : should be an intermediate url, load it and keep going
-            }
-
-            @Override
-            public void onPageFinished(WebView view, String url) {
-                String cookies = CookieManager.getInstance().getCookie(url);
-                Log.d(TAG, "All the cookies in a string:" + cookies);
-            }
-        });
-
-        //OIDC options form container
-        setupOIDCOptionsForm();
+        // Initialise the OIDC client definition form
+        clientFormLayout = findViewById(R.id.clientFormLayout);
 
         if (needsOptionsForm) {
-            webView.setVisibility(View.INVISIBLE);
+            //OIDC options form container
+            setupOIDCOptionsForm();
+
+            webView.setVisibility(View.GONE);
             clientFormLayout.setVisibility(View.VISIBLE);
 
             Log.d(TAG, "Initiated activity for completing OIDC client options.");
         }
         else {
+            clientFormLayout.setVisibility(View.GONE);
             webView.setVisibility(View.VISIBLE);
-            clientFormLayout.setVisibility(View.INVISIBLE);
 
             // Fetch the OIDC client options from the bundle extras
             clientId = extras.getString(KEY_OPT_OIDC_CLIENT_ID);
@@ -247,8 +166,17 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         }
     }
 
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        //Handles possible webView leak : http://stackoverflow.com/a/8011027/665823
+        parentLayout.removeAllViews();
+        webView.destroy();
+    }
+
+    //region OIDC options form
+
     private void setupOIDCOptionsForm() {
-        clientFormLayout = findViewById(R.id.clientFormLayout);
         validateClientButton = (Button) findViewById(R.id.setOIDCClientButton);
         validateClientButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -260,6 +188,38 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         flowTypeSpinner.setAdapter(new FlowTypesAdapter(this, android.R.layout.simple_spinner_item, Config.Flows.values()));
 
         setupFormFloatingLabel();
+    }
+
+    private class FlowTypesAdapter extends ArrayAdapter<Config.Flows> {
+        public FlowTypesAdapter(Context context, int resource, Config.Flows[] objects) {
+            super(context, resource, objects);
+        }
+
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            if (convertView == null) {
+                convertView = getLayoutInflater().inflate(R.layout.spinner_item_flowtype, parent, false);
+            }
+
+            Config.Flows item = getItem(position);
+            TextView textView = (TextView) convertView.findViewById(android.R.id.text1);
+            textView.setText(String.format(getString(R.string.OIDCFlowTypeOptionHint), item.name()));
+
+            return convertView;
+        }
+
+        @Override
+        public View getDropDownView(int position, View convertView, ViewGroup parent) {
+            if (convertView == null) {
+                convertView = getLayoutInflater().inflate(R.layout.spinner_item_flowtype, parent, false);
+            }
+
+            Config.Flows item = getItem(position);
+            TextView textView = (TextView) convertView.findViewById(android.R.id.text1);
+            textView.setText(item.name());
+
+            return convertView;
+        }
     }
 
     private void setupFormFloatingLabel() {
@@ -313,7 +273,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         }
     }
 
-    protected class OIDCOptionsTextWatcher implements TextWatcher {
+    protected static class OIDCOptionsTextWatcher implements TextWatcher {
         TextInputLayout textInputLayout;
 
         public OIDCOptionsTextWatcher(TextInputLayout textInputLayout) {
@@ -362,10 +322,207 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         return  isOk;
     }
 
+    //endregion
+
+    //region OIDC Flow handling
+
     /**
-     * Implicit flow
+     * Handles the result embedded in the redirect URI.
+     *
+     * @param redirectUriString Received redirect URI with query parameters.
      */
-    private class CreateIdTokenFromFragmentPartTask extends AsyncTask<String, Void, Boolean> {
+    private void finishAuthorization(String redirectUriString) {
+        Uri redirectUri = Uri.parse(redirectUriString);
+
+        Set<String> parameterNames;
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.HONEYCOMB) {
+            parameterNames = CompatUri.getQueryParameterNames(redirectUri);
+        } else {
+            parameterNames = redirectUri.getQueryParameterNames();
+        }
+
+        String extractedFragment = redirectUri.getEncodedFragment();
+
+        switch (flowType) {
+            case Implicit: {
+                if (!TextUtils.isEmpty(extractedFragment)) {
+                    ImplicitFlowTask task = new ImplicitFlowTask();
+                    task.execute(extractedFragment);
+
+                } else {
+                    Log.e(TAG, String.format(
+                            "redirectUriString '%1$s' doesn't contain fragment part; can't extract tokens",
+                            redirectUriString));
+                }
+                break;
+            }
+            case Hybrid: {
+                if (!TextUtils.isEmpty(extractedFragment)) {
+                    HybridFlowTask task = new HybridFlowTask();
+                    task.execute(extractedFragment);
+
+                } else {
+                    Log.e(TAG, String.format(
+                            "redirectUriString '%1$s' doesn't contain fragment part; can't request tokens",
+                            redirectUriString));
+                }
+                break;
+            }
+            case Code:
+            default: {
+                // The URL will contain a `code` parameter when the user has been authenticated
+                if (parameterNames.contains("code")) {
+                    String authToken = redirectUri.getQueryParameter("code");
+
+                    // Request the ID token
+                    CodeFlowTask task = new CodeFlowTask();
+                    task.execute(authToken);
+                } else {
+                    Log.e(TAG, String.format(
+                            "redirectUriString '%1$s' doesn't contain code param; can't extract authCode",
+                            redirectUriString));
+                }
+                break;
+            }
+        }
+    }
+
+    /**
+     * Tries to handle errors on the given URI. Authorization errors are handled when the URI
+     * contains a "error" parameter.
+     *
+     * @param uri URI to handle.
+     * @return Whether the URI had an error to handle.
+     */
+    private boolean handleAuthorizationErrors(String uri){
+        Uri parsedUri = Uri.parse(uri);
+
+        Set<String> parameterNames;
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.HONEYCOMB) {
+            parameterNames = CompatUri.getQueryParameterNames(parsedUri);
+        } else {
+            parameterNames = parsedUri.getQueryParameterNames();
+        }
+
+        // We need to check if the error is not in the fragment (for Implicit/Hybrid Flow)
+        if (parameterNames.isEmpty()) {
+            String extractedFragment = parsedUri.getEncodedFragment();
+            if (!TextUtils.isEmpty(extractedFragment)) {
+                parsedUri = new Uri.Builder().encodedQuery(extractedFragment).build();
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.HONEYCOMB) {
+                    parameterNames = CompatUri.getQueryParameterNames(parsedUri);
+                }
+                else {
+                    parameterNames = parsedUri.getQueryParameterNames();
+                }
+            }
+        }
+
+
+        if (parameterNames.contains("error")) {
+            // In case of an error, the `error` parameter contains an ASCII identifier, e.g.
+            // "temporarily_unavailable" and the `error_description` *may* contain a
+            // human-readable description of the error.
+            //
+            // For a list of the error identifiers, see
+            // http://tools.ietf.org/html/rfc6749#section-4.1.2.1
+            String error = parsedUri.getQueryParameter("error");
+            String errorDescription = parsedUri.getQueryParameter("error_description");
+
+            // If the user declines to authorise the app, there's no need to show an error message.
+            if (error.equals("access_denied")) {
+                Log.i(TAG, String.format("User declines to authorise the app : %s", errorDescription));
+            }
+            else {
+                showErrorDialog(
+                        new WeakReference<>(this),
+                        "Error code: %s\n\n%s", error, errorDescription);
+            }
+
+            return true;
+        }
+        else {
+            return false;
+        }
+    }
+
+    /**
+     * Tries to handle the given URI as the redirect URI.
+     *
+     * @param uri URI to handle.
+     * @return Whether the URI was handled.
+     */
+    private boolean handleUri(String uri) {
+        if (handleAuthorizationErrors(uri)) {
+            return true;
+        }
+        else if (uri.startsWith(redirectUrl)) {
+            finishAuthorization(uri);
+            return true;
+        }
+
+        return false;
+    }
+
+    private class AuthorizationWebViewClient extends WebViewClient {
+
+        /**
+         * Forces the WebView to not load the URL if it can be handled.
+         */
+        @Override
+        public boolean shouldOverrideUrlLoading(WebView view, String url) {
+            return handleUri(url) || super.shouldOverrideUrlLoading(view, url);
+        }
+
+        @Override
+        public void onReceivedError(WebView view, int errorCode, String description, String url) {
+            showErrorDialog(
+                    new WeakReference<>(AuthenticatorActivity.this),
+                    "Network error: got %s for %s.", description, url);
+        }
+
+        @Override
+        public void onPageFinished(WebView view, String url) {
+            String cookies = CookieManager.getInstance().getCookie(url);
+            Log.d(TAG, String.format("Cookies for url %1$s : %2$s", url, cookies));
+        }
+    }
+
+    /**
+     * Abstract task for authorization flows handling.
+     */
+    private abstract class AuthorizationFlowTask extends AsyncTask<String, Void, Boolean> {
+        @Override
+        protected void onPostExecute(Boolean wasSuccess) {
+            if (wasSuccess) {
+                // The account manager still wants the following information back
+                Intent intent = new Intent();
+
+                intent.putExtra(AccountManager.KEY_ACCOUNT_NAME, account.name);
+                intent.putExtra(AccountManager.KEY_ACCOUNT_TYPE, account.type);
+
+                setAccountAuthenticatorResult(intent.getExtras());
+                setResult(RESULT_OK, intent);
+                finish();
+            } else {
+                showErrorDialog(
+                        new WeakReference<>(AuthenticatorActivity.this),
+                        "Could not get ID Token.");
+            }
+        }
+    }
+
+    /**
+     * Handles Implicit flow by creating an {@link IdTokenResponse} from a Uri fragment asynchronously.
+     * <br/>
+     * An Uri string containing a Uri fragment is passed as first parameter of the
+     * {@link AsyncTask#execute(Object[])} method, i.e :
+     * <br/>
+     * <i>
+     * http://domain/redirect.html#scope=offline_access%20openid%20profile&state=xyz&code=xxx&id_token=yyyy
+     * </i>
+     */
+    private class ImplicitFlowTask extends AuthorizationFlowTask {
 
         @Override
         protected Boolean doInBackground(String... args) {
@@ -405,29 +562,21 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
 
             return true;
         }
-
-        @Override
-        protected void onPostExecute(Boolean wasSuccess) {
-            if (wasSuccess) {
-                // The account manager still wants the following information back
-                Intent intent = new Intent();
-
-                intent.putExtra(AccountManager.KEY_ACCOUNT_NAME, account.name);
-                intent.putExtra(AccountManager.KEY_ACCOUNT_TYPE, account.type);
-
-                setAccountAuthenticatorResult(intent.getExtras());
-                setResult(RESULT_OK, intent);
-                finish();
-            } else {
-                showErrorDialog("Could not get ID Token.");
-            }
-        }
     }
 
     /**
-     * Hybrid flow
+     * Handles Hybrid flow by extracting asynchronously the authorization code from a Uri fragment
+     * then exchanging it for an {@link IdTokenResponse} by making a request to the
+     * {@link Config#tokenServerUrl} token endpoint.
+     * <br/>
+     * An Uri string containing a Uri fragment is passed as first parameter of the
+     * {@link AsyncTask#execute(Object[])} method, i.e :
+     * <br/>
+     * <i>
+     * http://domain/redirect.html#scope=offline_access%20openid%20profile&state=xyz&code=xxx&id_token=yyyy
+     * </i>
      */
-    private class RequestIdTokenFromFragmentPartTask extends AsyncTask<String, Void, Boolean> {
+    private class HybridFlowTask extends AuthorizationFlowTask {
         @Override
         protected Boolean doInBackground(String... args) {
             String fragmentPart = args[0];
@@ -469,29 +618,17 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
 
             return true;
         }
-
-        @Override
-        protected void onPostExecute(Boolean wasSuccess) {
-            if (wasSuccess) {
-                // The account manager still wants the following information back
-                Intent intent = new Intent();
-
-                intent.putExtra(AccountManager.KEY_ACCOUNT_NAME, account.name);
-                intent.putExtra(AccountManager.KEY_ACCOUNT_TYPE, account.type);
-
-                setAccountAuthenticatorResult(intent.getExtras());
-                setResult(RESULT_OK, intent);
-                finish();
-            } else {
-                showErrorDialog("Could not get ID Token.");
-            }
-        }
     }
 
     /**
-     * Requests the ID Token asynchronously.
+     * Handles Code flow by requesting asynchronously a {@link IdTokenResponse} to the
+     * {@link Config#tokenServerUrl} token endpoint using an authorization code.
+     * <br/>
+     * The authorization code is passed as first parameter of the
+     * {@link AsyncTask#execute(Object[])} method.
+     * <br/>
      */
-    private class RequestIdTokenTask extends AsyncTask<String, Void, Boolean> {
+    private class CodeFlowTask extends AuthorizationFlowTask {
         @Override
         protected Boolean doInBackground(String... args) {
             String authToken = args[0];
@@ -520,24 +657,9 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
 
             return true;
         }
-
-        @Override
-        protected void onPostExecute(Boolean wasSuccess) {
-            if (wasSuccess) {
-                // The account manager still wants the following information back
-                Intent intent = new Intent();
-
-                intent.putExtra(AccountManager.KEY_ACCOUNT_NAME, account.name);
-                intent.putExtra(AccountManager.KEY_ACCOUNT_TYPE, account.type);
-
-                setAccountAuthenticatorResult(intent.getExtras());
-                setResult(RESULT_OK, intent);
-                finish();
-            } else {
-                showErrorDialog("Could not get ID Token.");
-            }
-        }
     }
+
+    //endregion
 
     private void createAccount(IdTokenResponse response) {
         Log.d(TAG, "Creating account.");
@@ -593,21 +715,31 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
 
     /**
      * TODO: Improve error messages.
+     *
+     * @param context the activity context (WeakReference to avoid leaks)
+     * @param message Error message that can contain formatting placeholders.
+     * @param args    Formatting arguments for the message, or null.
      */
-    private void showErrorDialog(String message) {
-        new AlertDialog.Builder(AuthenticatorActivity.this)
-                .setTitle("Sorry, there was an error")
-                .setMessage(message)
-                .setCancelable(true)
-                .setNeutralButton("Close", new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialogInterface, int i) {
-                        dialogInterface.dismiss();
-                        finish();
-                    }
-                })
-                .create()
-                .show();
+    private static void showErrorDialog(final WeakReference<AuthenticatorActivity> context, String message, String... args) {
+        if (context.get() != null) {
+            if (args != null) {
+                message = String.format(message, args);
+            }
+
+            new AlertDialog.Builder(context.get())
+                    .setTitle("Sorry, there was an error")
+                    .setMessage(message)
+                    .setCancelable(true)
+                    .setNeutralButton("Close", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialogInterface, int i) {
+                            dialogInterface.dismiss();
+                            context.get().finish();
+                        }
+                    })
+                    .create()
+                    .show();
+        }
     }
 
     /**
@@ -626,37 +758,5 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         intent.putExtra(AuthenticatorActivity.KEY_ACCOUNT_OBJECT, account);
 
         return intent;
-    }
-
-    private class FlowTypesAdapter extends ArrayAdapter<Config.Flows> {
-        public FlowTypesAdapter(Context context, int resource, Config.Flows[] objects) {
-            super(context, resource, objects);
-        }
-
-        @Override
-        public View getView(int position, View convertView, ViewGroup parent) {
-            if (convertView == null) {
-                convertView = getLayoutInflater().inflate(R.layout.spinner_item_flowtype, parent, false);
-            }
-
-            Config.Flows item = getItem(position);
-            TextView textView = (TextView) convertView.findViewById(android.R.id.text1);
-            textView.setText(String.format(getString(R.string.OIDCFlowTypeOptionHint), item.name()));
-
-            return convertView;
-        }
-
-        @Override
-        public View getDropDownView(int position, View convertView, ViewGroup parent) {
-            if (convertView == null) {
-                convertView = getLayoutInflater().inflate(R.layout.spinner_item_flowtype, parent, false);
-            }
-
-            Config.Flows item = getItem(position);
-            TextView textView = (TextView) convertView.findViewById(android.R.id.text1);
-            textView.setText(item.name());
-
-            return convertView;
-        }
     }
 }
