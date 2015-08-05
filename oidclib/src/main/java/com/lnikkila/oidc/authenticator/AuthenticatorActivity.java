@@ -147,6 +147,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
             clientId = extras.getString(KEY_OPT_OIDC_CLIENT_ID);
             clientSecret = extras.getString(KEY_OPT_OIDC_CLIENT_SECRET);
             redirectUrl = extras.getString(KEY_OPT_OIDC_CLIENT_REURL);
+            redirectUrl = redirectUrl != null ? redirectUrl.toLowerCase() : null;
             scopes = extras.getStringArray(KEY_OPT_OIDC_CLIENT_SCOPES);
             realm = extras.getString(KEY_OPT_OIDC_CLIENT_REALM);
             flowType = Config.Flows.valueOf(extras.getString(KEY_OPT_OIDC_CLIENT_FLOW_TYPE));
@@ -246,7 +247,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
 
         clientId = clientidEdit.getText().toString();
         clientSecret = clientSecretEdit.getText().toString();
-        redirectUrl = redirectUriEdit.getText().toString();
+        redirectUrl = redirectUriEdit.getText().toString().toLowerCase();
         if (TextUtils.isEmpty(scopesEdit.getText().toString())) {
             scopes = null;
         }
