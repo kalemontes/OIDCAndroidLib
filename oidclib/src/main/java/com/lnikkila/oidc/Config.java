@@ -10,7 +10,8 @@ public final class Config {
     {
         Code,  				//http://openid.net/specs/openid-connect-core-1_0.html#CodeFlowAuth
         Implicit,           //http://openid.net/specs/openid-connect-core-1_0.html#ImplicitFlowAuth
-        Hybrid              //http://openid.net/specs/openid-connect-core-1_0.html#HybridFlowAuth
+        Hybrid,             //http://openid.net/specs/openid-connect-core-1_0.html#HybridFlowAuth
+        Password
     }
 
     // TODO: Add the OIDC endpoints information you received from your OIDC provider below.

@@ -8,6 +8,7 @@ import com.github.kevinsawicki.http.HttpRequest;
 import com.google.api.client.auth.oauth2.AuthorizationCodeRequestUrl;
 import com.google.api.client.auth.oauth2.AuthorizationCodeTokenRequest;
 import com.google.api.client.auth.oauth2.AuthorizationRequestUrl;
+import com.google.api.client.auth.oauth2.PasswordTokenRequest;
 import com.google.api.client.auth.oauth2.RefreshTokenRequest;
 import com.google.api.client.auth.openidconnect.IdToken;
 import com.google.api.client.auth.openidconnect.IdTokenResponse;
@@ -252,6 +253,47 @@ public class OIDCUtils {
             throw new IOException("Invalid ID token returned.");
         }
     }
+
+
+    public static IdTokenResponse requestTokensWithPasswordGrant(String tokenServerUrl, String realm, String redirectUrl,
+                                                String clientId, String clientSecret, String[] scopes,
+                                                String userName, String userPwd) throws IOException {
+
+        List<String> scopesList = Arrays.asList(scopes);
+
+        PasswordTokenRequest request = new PasswordTokenRequest(
+                AndroidHttp.newCompatibleTransport(),
+                new GsonFactory(),
+                new GenericUrl(tokenServerUrl),
+                userName,
+                userPwd
+        );
+//        request.set("redirect_uri", redirectUrl); //TODO see if needed
+        request.setScopes(scopesList);
+
+        // This may be OpenAm specific, where we can have realms that each can define different level
+        // of access. This enables to define different endpoints on the same domain or base url.
+        if (!TextUtils.isEmpty(realm)) {
+            request.set("realm", realm);
+        }
+
+        if (!TextUtils.isEmpty(clientSecret)) {
+            request.setClientAuthentication(new BasicAuthentication(clientId, clientSecret));
+        } else {
+            request.set("client_id", clientId);
+        }
+
+        IdTokenResponse response = IdTokenResponse.execute(request);
+        String idToken = response.getIdToken();
+
+        if (isValidIdToken(clientId, idToken)) {
+            return response;
+        } else {
+            throw new IOException("Invalid ID token returned.");
+        }
+    }
+
+
 
     /**
      * Exchanges a Refresh Token for a new set of tokens.

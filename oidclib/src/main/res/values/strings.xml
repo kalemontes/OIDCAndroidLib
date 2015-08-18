@@ -8,5 +8,9 @@
     <string name="OIDCClientIdOptionHint">Client Id</string>
     <string name="OIDCFlowTypeOptionHint">Flow Type %1$s</string>
 
+    <string name="OIDCUserNameOptionHint">Username</string>
+    <string name="OIDCUserPwdOptionHint">Password</string>
+    <string name="OIDCLoginnHint">LOG IN</string>
+
     <string name="OIDCOptionsMandatoryError">Mandatory</string>
 </resources>

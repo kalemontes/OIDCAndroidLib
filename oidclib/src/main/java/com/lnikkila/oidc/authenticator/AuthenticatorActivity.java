@@ -140,9 +140,6 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
             Log.d(TAG, "Initiated activity for completing OIDC client options.");
         }
         else {
-            clientFormLayout.setVisibility(View.GONE);
-            webView.setVisibility(View.VISIBLE);
-
             // Fetch the OIDC client options from the bundle extras
             clientId = extras.getString(KEY_OPT_OIDC_CLIENT_ID);
             clientSecret = extras.getString(KEY_OPT_OIDC_CLIENT_SECRET);
@@ -151,18 +148,30 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
             realm = extras.getString(KEY_OPT_OIDC_CLIENT_REALM);
             flowType = Config.Flows.valueOf(extras.getString(KEY_OPT_OIDC_CLIENT_FLOW_TYPE));
 
-            // Generate the authentication URL using the oidc options set on the bundle
-            String authUrl = OIDCUtils.newAuthenticationUrl(Config.authorizationServerUrl,
-                    realm,
-                    flowType,
-                    clientId,
-                    redirectUrl,
-                    scopes);
+            if (flowType == Config.Flows.Password) {
+                clientFormLayout.setVisibility(View.VISIBLE);
+                webView.setVisibility(View.GONE);
+                setupPasswordGrantForm();
 
-            Log.d(TAG, String.format("Initiated activity for getting authorisation with URL '%s'.",
-                    authUrl));
+                Log.d(TAG, "Initiated activity for password grant form.");
+            }
+            else {
+                clientFormLayout.setVisibility(View.GONE);
+                webView.setVisibility(View.VISIBLE);
 
-            webView.loadUrl(authUrl);
+                // Generate the authentication URL using the oidc options set on the bundle
+                String authUrl = OIDCUtils.newAuthenticationUrl(Config.authorizationServerUrl,
+                        realm,
+                        flowType,
+                        clientId,
+                        redirectUrl,
+                        scopes);
+
+                Log.d(TAG, String.format("Initiated activity for getting authorisation with URL '%s'.",
+                        authUrl));
+
+                webView.loadUrl(authUrl);
+            }
         }
     }
 
@@ -657,6 +666,91 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
 
             return true;
         }
+    }
+
+    private class PasswordFlowTask extends AuthorizationFlowTask {
+        @Override
+        protected Boolean doInBackground(String... args) {
+            String userName = args[0];
+            String userPwd = args[1];
+            IdTokenResponse response;
+
+            Log.d(TAG, "Requesting ID token.");
+
+            try {
+                response = OIDCUtils.requestTokensWithPasswordGrant(Config.tokenServerUrl,
+                        realm,
+                        redirectUrl,
+                        clientId,
+                        clientSecret,
+                        scopes,
+                        userName,
+                        userPwd);
+            } catch (IOException e) {
+                Log.e(TAG, "Could not get response.");
+                e.printStackTrace();
+                return false;
+            }
+
+            if (isNewAccount) {
+                createAccount(response);
+            } else {
+                AccountUtils.saveTokens(accountManager, account, response);
+            }
+
+            return true;
+        }
+    }
+
+    //endregion
+
+    //region PasswordGrant Flow
+
+    private void setupPasswordGrantForm() {
+        setupFormFloatingLabel();
+        flowTypeSpinner = (Spinner) findViewById(R.id.flowTypeSpinner);
+
+        redirectUriInputLayout.setVisibility(View.GONE);
+        scopesInputLayout.setVisibility(View.GONE);
+        flowTypeSpinner.setVisibility(View.GONE);
+
+        clientIdInputLayout.setHint(getString(R.string.OIDCUserNameOptionHint));
+        clientSecretInputLayout.setHint(getString(R.string.OIDCUserPwdOptionHint));
+
+        validateClientButton = (Button) findViewById(R.id.setOIDCClientButton);
+        validateClientButton.setText(R.string.OIDCLoginnHint);
+        validateClientButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                EditText userNameEdit = (EditText) findViewById(R.id.clientIdEditText);
+                EditText userPwdEdit = (EditText) findViewById(R.id.clientSecretEditText);
+
+                String userName = userNameEdit.getText().toString();
+                String userPwd = userPwdEdit.getText().toString();
+
+                if (isPasswordGrantInfoOk(userName, userPwd)) {
+                    PasswordFlowTask task = new PasswordFlowTask();
+                    task.execute(userName, userPwd);
+                }
+            }
+        });
+
+
+    }
+
+    private boolean isPasswordGrantInfoOk(String userName, String userPwd) {
+        boolean isOk = true;
+        if (TextUtils.isEmpty(userName)){
+            clientIdInputLayout.setError(getString(R.string.OIDCOptionsMandatoryError));
+            clientIdInputLayout.setErrorEnabled(true);
+            isOk = false;
+        }
+        if (TextUtils.isEmpty(userPwd)){
+            clientSecretInputLayout.setError(getString(R.string.OIDCOptionsMandatoryError));
+            clientSecretInputLayout.setErrorEnabled(true);
+            isOk = false;
+        }
+        return  isOk;
     }
 
     //endregion
