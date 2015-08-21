@@ -28,6 +28,7 @@ import android.widget.RelativeLayout;
 import android.widget.Spinner;
 import android.widget.TextView;
 
+import com.google.api.client.auth.oauth2.TokenResponse;
 import com.google.api.client.auth.openidconnect.IdTokenResponse;
 import com.google.api.client.json.gson.GsonFactory;
 import com.lnikkila.oidc.AccountUtils;
@@ -118,8 +119,8 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         // see  http://stackoverflow.com/a/8011027/665823 of why we doing this :
         webView = new WebView(this);
         parentLayout.addView(webView, new RelativeLayout.LayoutParams(
-                                                            ViewGroup.LayoutParams.MATCH_PARENT,
-                                                            ViewGroup.LayoutParams.MATCH_PARENT));
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
         //instead of this :
         //webView = (WebView) findViewById(R.id.WebView);
 
@@ -607,12 +608,13 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
                 Log.i(TAG, "Requesting access_token with AuthCode : " + authCode);
 
                 try {
-                    response = OIDCUtils.requestTokens(Config.tokenServerUrl,
+                    response = (IdTokenResponse) OIDCUtils.requestTokensWithCodeGrant(Config.tokenServerUrl,
                             realm,
                             redirectUrl,
                             clientId,
                             clientSecret,
-                            authCode);
+                            authCode,
+                            true);
                 } catch (IOException e) {
                     Log.e(TAG, "Could not get response.");
                     e.printStackTrace();
@@ -647,12 +649,13 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
             Log.d(TAG, "Requesting ID token.");
 
             try {
-                response = OIDCUtils.requestTokens(Config.tokenServerUrl,
+                response = (IdTokenResponse) OIDCUtils.requestTokensWithCodeGrant(Config.tokenServerUrl,
                         realm,
                         redirectUrl,
                         clientId,
                         clientSecret,
-                        authToken);
+                        authToken,
+                        true);
             } catch (IOException e) {
                 Log.e(TAG, "Could not get response.");
                 e.printStackTrace();
@@ -674,7 +677,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         protected Boolean doInBackground(String... args) {
             String userName = args[0];
             String userPwd = args[1];
-            IdTokenResponse response;
+            TokenResponse response;
 
             Log.d(TAG, "Requesting ID token.");
 
@@ -801,6 +804,23 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
 
         account = new Account(String.format("%s (%s)", accountName, accountId), accountType);
         accountManager.addAccountExplicitly(account, null, null);
+
+        // Store the tokens in the account
+        AccountUtils.saveTokens(accountManager, account, response);
+
+        Log.d(TAG, "Account created.");
+    }
+
+    private void createAccount(TokenResponse response) {
+        Log.d(TAG, "Creating account.");
+
+        String accountType = getString(R.string.ACCOUNT_TYPE);
+        String accountName = getString(R.string.app_name);
+
+        account = new Account(accountName, accountType);
+        accountManager.addAccountExplicitly(account, null, null);
+
+        Log.d(TAG, String.format("Saved tokens : (AT %1$s) (RT %2$s)", response.getAccessToken(), response.getRefreshToken()));
 
         // Store the tokens in the account
         AccountUtils.saveTokens(accountManager, account, response);

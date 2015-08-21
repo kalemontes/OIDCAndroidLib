@@ -13,8 +13,8 @@ import android.os.Handler;
 import android.text.TextUtils;
 import android.util.Log;
 
+import com.google.api.client.auth.oauth2.TokenResponse;
 import com.google.api.client.auth.oauth2.TokenResponseException;
-import com.google.api.client.auth.openidconnect.IdTokenResponse;
 import com.lnikkila.oidc.AccountUtils;
 import com.lnikkila.oidc.Config;
 import com.lnikkila.oidc.OIDCUtils;
@@ -185,7 +185,7 @@ public class Authenticator extends AbstractAccountAuthenticator {
                     String[] scopes = options.getStringArray(AuthenticatorActivity.KEY_OPT_OIDC_CLIENT_SCOPES);
                     String realm = options.getString(AuthenticatorActivity.KEY_OPT_OIDC_CLIENT_REALM);
 
-                    IdTokenResponse tokenResponse = OIDCUtils.refreshTokens(Config.tokenServerUrl,
+                    TokenResponse tokenResponse = OIDCUtils.refreshTokens(Config.tokenServerUrl,
                             realm,
                             clientId,
                             clientSecret,

@@ -8,6 +8,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.text.TextUtils;
 
+import com.google.api.client.auth.oauth2.TokenResponse;
 import com.google.api.client.auth.openidconnect.IdTokenResponse;
 import com.lnikkila.oidc.authenticator.Authenticator;
 
@@ -87,6 +88,11 @@ public class AccountUtils {
 
     public static void saveTokens(AccountManager accountManager, Account account, IdTokenResponse tokenResponse) {
         accountManager.setAuthToken(account, Authenticator.TOKEN_TYPE_ID, tokenResponse.getIdToken());
+        accountManager.setAuthToken(account, Authenticator.TOKEN_TYPE_ACCESS, tokenResponse.getAccessToken());
+        accountManager.setAuthToken(account, Authenticator.TOKEN_TYPE_REFRESH, tokenResponse.getRefreshToken());
+    }
+
+    public static void saveTokens(AccountManager accountManager, Account account, TokenResponse tokenResponse) {
         accountManager.setAuthToken(account, Authenticator.TOKEN_TYPE_ACCESS, tokenResponse.getAccessToken());
         accountManager.setAuthToken(account, Authenticator.TOKEN_TYPE_REFRESH, tokenResponse.getRefreshToken());
     }

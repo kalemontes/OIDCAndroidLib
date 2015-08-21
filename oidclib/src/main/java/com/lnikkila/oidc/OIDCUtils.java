@@ -3,6 +3,7 @@ package com.lnikkila.oidc;
 import android.support.annotation.NonNull;
 import android.support.v4.util.ArrayMap;
 import android.text.TextUtils;
+import android.util.Log;
 
 import com.github.kevinsawicki.http.HttpRequest;
 import com.google.api.client.auth.oauth2.AuthorizationCodeRequestUrl;
@@ -10,6 +11,7 @@ import com.google.api.client.auth.oauth2.AuthorizationCodeTokenRequest;
 import com.google.api.client.auth.oauth2.AuthorizationRequestUrl;
 import com.google.api.client.auth.oauth2.PasswordTokenRequest;
 import com.google.api.client.auth.oauth2.RefreshTokenRequest;
+import com.google.api.client.auth.oauth2.TokenResponse;
 import com.google.api.client.auth.openidconnect.IdToken;
 import com.google.api.client.auth.openidconnect.IdTokenResponse;
 import com.google.api.client.auth.openidconnect.IdTokenVerifier;
@@ -106,7 +108,7 @@ public class OIDCUtils {
         // "code token", or "code id_token token".
         // For our needs "token" is not defined here because we want an access_token that has made
         // a client authentication. That access_token will be retrieve later using the TokenEndpoint
-        // (see #requestTokens).
+        // (see #requestTokensWithCodeGrant).
         String[] responsesTypes = {"code", "id_token"};
         List<String> scopesList = Arrays.asList(scopes);
         List<String> responsesList = Arrays.asList(responsesTypes);
@@ -222,9 +224,9 @@ public class OIDCUtils {
      * <b>NOTE : The realm parameter is usually OpenAm specific. For other OP it should be set to null</b>
      * @throws IOException
      */
-    public static IdTokenResponse requestTokens(String tokenServerUrl, String realm, String redirectUrl,
-                                                String clientId, String clientSecret,
-                                                String authCode) throws IOException {
+    public static TokenResponse requestTokensWithCodeGrant(String tokenServerUrl, String realm, String redirectUrl,
+                                                           String clientId, String clientSecret,
+                                                           String authCode, boolean isOIDC) throws IOException {
 
         AuthorizationCodeTokenRequest request = new AuthorizationCodeTokenRequest(
                 AndroidHttp.newCompatibleTransport(),
@@ -242,22 +244,41 @@ public class OIDCUtils {
 
         if (!TextUtils.isEmpty(clientSecret)) {
             request.setClientAuthentication(new BasicAuthentication(clientId, clientSecret));
+        } else {
+            request.set("client_id", clientId);
         }
 
-        IdTokenResponse response = IdTokenResponse.execute(request);
-        String idToken = response.getIdToken();
+        // Working with OIDC
+        if (isOIDC) {
+            Log.d("OIDCUtils", "tokens request OIDC sent");
+            IdTokenResponse response = IdTokenResponse.execute(request);
+            String idToken = response.getIdToken();
 
-        if (isValidIdToken(clientId, idToken)) {
-            return response;
-        } else {
-            throw new IOException("Invalid ID token returned.");
+            if (isValidIdToken(clientId, idToken)) {
+                return response;
+            } else {
+                throw new IOException("Invalid ID token returned.");
+            }
+        }
+        else {
+            Log.d("OIDCUtils", "tokens request OAuth2 sent");
+            TokenResponse tokenResponse = request.executeUnparsed().parseAs(TokenResponse.class);
+            String accessToken = tokenResponse.getAccessToken();
+
+            if (!TextUtils.isEmpty(accessToken)){
+                Log.d("OIDCUtils", String.format("Manage to parse and extract AT : %1$s", accessToken));
+                return tokenResponse;
+            }
+            else {
+                throw new IOException("Invalid Access Token returned.");
+            }
         }
     }
 
 
-    public static IdTokenResponse requestTokensWithPasswordGrant(String tokenServerUrl, String realm, String redirectUrl,
-                                                String clientId, String clientSecret, String[] scopes,
-                                                String userName, String userPwd) throws IOException {
+    public static TokenResponse requestTokensWithPasswordGrant(String tokenServerUrl, String realm, String redirectUrl,
+                                                               String clientId, String clientSecret, String[] scopes,
+                                                               String userName, String userPwd) throws IOException {
 
         List<String> scopesList = Arrays.asList(scopes);
 
@@ -269,7 +290,9 @@ public class OIDCUtils {
                 userPwd
         );
 //        request.set("redirect_uri", redirectUrl); //TODO see if needed
-        request.setScopes(scopesList);
+        if (!scopesList.isEmpty()) {
+            request.setScopes(scopesList);
+        }
 
         // This may be OpenAm specific, where we can have realms that each can define different level
         // of access. This enables to define different endpoints on the same domain or base url.
@@ -283,13 +306,33 @@ public class OIDCUtils {
             request.set("client_id", clientId);
         }
 
-        IdTokenResponse response = IdTokenResponse.execute(request);
-        String idToken = response.getIdToken();
 
-        if (isValidIdToken(clientId, idToken)) {
-            return response;
-        } else {
-            throw new IOException("Invalid ID token returned.");
+        // Working with OIDC
+        if (scopesList.contains("openid")) {
+            Log.d("OIDCUtils", "PasswordGrant request OIDC sent");
+
+            IdTokenResponse tokenResponse = IdTokenResponse.execute(request);
+            String idToken = tokenResponse.getIdToken();
+
+            if (isValidIdToken(clientId, idToken)) {
+                return tokenResponse;
+            } else {
+                throw new IOException("Invalid ID token returned.");
+            }
+        }
+        // Working with OAuth2 only
+        else {
+            Log.d("OIDCUtils", "PasswordGrant request OAuth2 sent");
+            TokenResponse tokenResponse = request.executeUnparsed().parseAs(TokenResponse.class);
+            String accessToken = tokenResponse.getAccessToken();
+
+            if (!TextUtils.isEmpty(accessToken)){
+                Log.d("OIDCUtils", String.format("Manage to parse and extract AT : %1$s", accessToken));
+                return tokenResponse;
+            }
+            else {
+                throw new IOException("Invalid Access Token returned.");
+            }
         }
     }
 
@@ -303,9 +346,9 @@ public class OIDCUtils {
      * <br/>
      * <b>NOTE : The realm parameter is usually OpenAm specific. For other OP it should be set to null</b>
      */
-    public static IdTokenResponse refreshTokens(String tokenServerUrl, String realm, String clientId,
-                                                String clientSecret, String[] scopes,
-                                                String refreshToken) throws IOException {
+    public static TokenResponse refreshTokens(String tokenServerUrl, String realm, String clientId,
+                                              String clientSecret, String[] scopes,
+                                              String refreshToken) throws IOException {
 
         List<String> scopesList = Arrays.asList(scopes);
 
@@ -316,16 +359,29 @@ public class OIDCUtils {
                 refreshToken
         );
 
+        if (!scopesList.isEmpty()) {
+            request.setScopes(scopesList);
+        }
+
         // This is OpenAm specific, where we can have realms that each can define different level
         // of access. This enables to define different endpoints on the same domain or base url.
         if (!TextUtils.isEmpty(realm)) {
             request.set("realm", realm);
         }
 
-        request.setClientAuthentication(new BasicAuthentication(clientId, clientSecret));
-        request.setScopes(scopesList);
+        if (!TextUtils.isEmpty(clientSecret)) {
+            request.setClientAuthentication(new BasicAuthentication(clientId, clientSecret));
+        } else {
+            request.set("client_id", clientId);
+        }
 
-        return IdTokenResponse.execute(request);
+        // Working with OIDC
+        if (scopesList.contains("openid")) {
+            return IdTokenResponse.execute(request);
+        }
+        else {
+            return request.executeUnparsed().parseAs(TokenResponse.class);
+        }
     }
 
     /**
