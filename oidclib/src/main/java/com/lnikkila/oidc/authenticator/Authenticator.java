@@ -18,6 +18,7 @@ import com.google.api.client.auth.oauth2.TokenResponseException;
 import com.lnikkila.oidc.AccountUtils;
 import com.lnikkila.oidc.Config;
 import com.lnikkila.oidc.OIDCUtils;
+import com.lnikkila.oidc.R;
 
 import java.io.IOException;
 
@@ -40,8 +41,10 @@ public class Authenticator extends AbstractAccountAuthenticator {
 
     private final String TAG = getClass().getSimpleName();
 
-    private Context context;
-    private AccountManager accountManager;
+    protected final Context context;
+    protected final AccountManager accountManager;
+
+    protected final String tokenEndpoint;
 
     public static final String TOKEN_TYPE_ID = "com.lnikkila.oidcsample.TOKEN_TYPE_ID";
     public static final String TOKEN_TYPE_ACCESS = "com.lnikkila.oidcsample.TOKEN_TYPE_ACCESS";
@@ -51,7 +54,9 @@ public class Authenticator extends AbstractAccountAuthenticator {
         super(context);
         this.context = context;
 
-        accountManager = AccountManager.get(context);
+        this.accountManager = AccountManager.get(context);
+
+        this.tokenEndpoint = this.context.getString(R.string.tokenEndpoint);
 
         Log.d(TAG, "Authenticator created.");
     }
@@ -185,7 +190,8 @@ public class Authenticator extends AbstractAccountAuthenticator {
                     String[] scopes = options.getStringArray(AuthenticatorActivity.KEY_OPT_OIDC_CLIENT_SCOPES);
                     String realm = options.getString(AuthenticatorActivity.KEY_OPT_OIDC_CLIENT_REALM);
 
-                    TokenResponse tokenResponse = OIDCUtils.refreshTokens(Config.tokenServerUrl,
+                    TokenResponse tokenResponse = OIDCUtils.refreshTokens(
+                            tokenEndpoint,
                             realm,
                             clientId,
                             clientSecret,

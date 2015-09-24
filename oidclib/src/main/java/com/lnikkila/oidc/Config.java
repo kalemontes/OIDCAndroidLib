@@ -14,8 +14,5 @@ public final class Config {
         Password
     }
 
-    // TODO: Add the OIDC endpoints information you received from your OIDC provider below.
-    public static final String authorizationServerUrl = "https://www.example.com/oauth2/authorize";
-    public static final String tokenServerUrl = "https://www.example.com/oauth2/token";
-    public static final String userInfoUrl = "https://www.example.com/oauth2/userinfo";
+	// Info: The endpoints configuration has move to 'oidclib/src/main/res/values/endpoint.xml'
 }

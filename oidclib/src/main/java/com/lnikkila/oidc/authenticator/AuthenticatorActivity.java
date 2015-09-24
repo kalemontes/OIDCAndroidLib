@@ -62,9 +62,9 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
 
     private final String TAG = getClass().getSimpleName();
 
-    public static final String KEY_PRESENT_OPTS_FORM = "com.lnikkila.oidcsample.KEY_PRESENT_OPTS_FORM";
-    public static final String KEY_IS_NEW_ACCOUNT = "com.lnikkila.oidcsample.KEY_IS_NEW_ACCOUNT";
-    public static final String KEY_ACCOUNT_OBJECT = "com.lnikkila.oidcsample.KEY_ACCOUNT_OBJECT";
+    public static final String KEY_PRESENT_OPTS_FORM    = "com.lnikkila.oidcsample.KEY_PRESENT_OPTS_FORM";
+    public static final String KEY_IS_NEW_ACCOUNT       = "com.lnikkila.oidcsample.KEY_IS_NEW_ACCOUNT";
+    public static final String KEY_ACCOUNT_OBJECT       = "com.lnikkila.oidcsample.KEY_ACCOUNT_OBJECT";
 
     public static final String KEY_OPT_OIDC_CLIENT_ID        = "clientId";
     public static final String KEY_OPT_OIDC_CLIENT_SECRET    = "clientSecret";
@@ -72,6 +72,10 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
     public static final String KEY_OPT_OIDC_CLIENT_SCOPES    = "scopes";
     public static final String KEY_OPT_OIDC_CLIENT_REALM     = "realm";
     public static final String KEY_OPT_OIDC_CLIENT_FLOW_TYPE = "flowType";
+
+    private String authorizationEnpoint;
+    private String tokenEndpoint;
+    private String userInfoEndpoint;
 
     private AccountManager accountManager;
     private Account account;
@@ -99,6 +103,10 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_authentication);
 
+        authorizationEnpoint = getString(R.string.authorizationEnpoint);
+        tokenEndpoint = getString(R.string.tokenEndpoint);
+        userInfoEndpoint = getString(R.string.userInfoEndpoint);
+
         accountManager = AccountManager.get(this);
 
         Bundle extras = getIntent().getExtras();
@@ -125,7 +133,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         //webView = (WebView) findViewById(R.id.WebView);
 
         //TODO: Enable this if your authorisation page requires JavaScript
-        //webView.getSettings().setJavaScriptEnabled(true);
+        webView.getSettings().setJavaScriptEnabled(true);
         webView.setWebViewClient(new AuthorizationWebViewClient());
 
         // Initialise the OIDC client definition form
@@ -162,7 +170,8 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
                 webView.setVisibility(View.VISIBLE);
 
                 // Generate the authentication URL using the oidc options set on the bundle
-                String authUrl = OIDCUtils.newAuthenticationUrl(Config.authorizationServerUrl,
+                String authUrl = OIDCUtils.newAuthenticationUrl(
+                        authorizationEnpoint,
                         realm,
                         flowType,
                         clientId,
@@ -269,7 +278,8 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         if (isOIDCClientInfoOk(clientId, clientSecret, redirectUrl, scopes)) {
 
             // Generate a new authorisation URL
-            String authUrl = OIDCUtils.newAuthenticationUrl(Config.authorizationServerUrl,
+            String authUrl = OIDCUtils.newAuthenticationUrl(
+                    authorizationEnpoint,
                     realm,
                     flowType,
                     clientId,
@@ -578,7 +588,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
     /**
      * Handles Hybrid flow by extracting asynchronously the authorization code from a Uri fragment
      * then exchanging it for an {@link IdTokenResponse} by making a request to the
-     * {@link Config#tokenServerUrl} token endpoint.
+     * {@link #tokenEndpoint}.
      * <br/>
      * An Uri string containing a Uri fragment is passed as first parameter of the
      * {@link AsyncTask#execute(Object[])} method, i.e :
@@ -608,7 +618,8 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
                 Log.i(TAG, "Requesting access_token with AuthCode : " + authCode);
 
                 try {
-                    response = (IdTokenResponse) OIDCUtils.requestTokensWithCodeGrant(Config.tokenServerUrl,
+                    response = (IdTokenResponse) OIDCUtils.requestTokensWithCodeGrant(
+                            tokenEndpoint,
                             realm,
                             redirectUrl,
                             clientId,
@@ -634,7 +645,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
 
     /**
      * Handles Code flow by requesting asynchronously a {@link IdTokenResponse} to the
-     * {@link Config#tokenServerUrl} token endpoint using an authorization code.
+     * {@link #tokenEndpoint} using an authorization code.
      * <br/>
      * The authorization code is passed as first parameter of the
      * {@link AsyncTask#execute(Object[])} method.
@@ -649,7 +660,8 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
             Log.d(TAG, "Requesting ID token.");
 
             try {
-                response = (IdTokenResponse) OIDCUtils.requestTokensWithCodeGrant(Config.tokenServerUrl,
+                response = (IdTokenResponse) OIDCUtils.requestTokensWithCodeGrant(
+                        tokenEndpoint,
                         realm,
                         redirectUrl,
                         clientId,
@@ -682,7 +694,8 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
             Log.d(TAG, "Requesting ID token.");
 
             try {
-                response = OIDCUtils.requestTokensWithPasswordGrant(Config.tokenServerUrl,
+                response = OIDCUtils.requestTokensWithPasswordGrant(
+                        tokenEndpoint,
                         realm,
                         redirectUrl,
                         clientId,
@@ -792,7 +805,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
 
         try {
 //            userInfo = OIDCUtils.getUserInfo(Config.userInfoUrl, response.getIdToken());
-            userInfo = OIDCUtils.getUserInfo(Config.userInfoUrl, realm, response.getAccessToken());
+            userInfo = OIDCUtils.getUserInfo(userInfoEndpoint, realm, response.getAccessToken());
         } catch (IOException e) {
             Log.e(TAG, "Could not get UserInfo.");
             e.printStackTrace();
