@@ -1,7 +1,6 @@
 package com.lnikkila.oidc;
 
 import android.support.annotation.NonNull;
-import android.support.v4.util.ArrayMap;
 import android.text.TextUtils;
 import android.util.Log;
 
@@ -40,16 +39,36 @@ import java.util.Map;
 public class OIDCUtils {
 
     /**
+     * Supported OIDC Flows
+     */
+    public enum Flows
+    {
+        Code,  				//http://openid.net/specs/openid-connect-core-1_0.html#CodeFlowAuth
+        Implicit,           //http://openid.net/specs/openid-connect-core-1_0.html#ImplicitFlowAuth
+        Hybrid,             //http://openid.net/specs/openid-connect-core-1_0.html#HybridFlowAuth
+        Password
+    }
+
+    public static boolean isSupportedFlow(String value) {
+
+        for (Flows c : Flows.values()) {
+            if (c.name().equals(value)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Generates an Authentication Request URL to the Authorization Endpoint to start an Implicit Flow.
      * When using the Implicit Flow, all tokens are returned from the Authorization Endpoint; the
      * Token Endpoint is not used so it allows to get all tokens on one trip. The downside is that
      * it doesn't support refresh tokens.
      * @see <a href="http://openid.net/specs/openid-connect-core-1_0.html#ImplicitFlowAuth">Implicit Flow</a>
-     * <br/>
-     * <b>NOTE : The realm parameter is usually OpenAm specific. For other OP it should be set to null</b>
      */
-    public static String implicitFlowAuthenticationUrl(String authorizationServerUrl, String realm, String clientId,
-                                                       String redirectUrl, String[] scopes) {
+    public static String implicitFlowAuthenticationUrl(String authorizationServerUrl, String clientId,
+                                                       String redirectUrl, String[] scopes, Map<String, String> extras) {
 
         //TODO: see what the following statement implies :
         // "While OAuth 2.0 also defines the token Response Type value for the Implicit Flow,
@@ -68,10 +87,12 @@ public class OIDCUtils {
                 .set("nonce", "");
         //TODO: nonce is mandatory we should try to generate one
 
-        // This may be OpenAm specific, where we can have realms that each can define different level
-        // of access. This enables to define different endpoints on the same domain or base url.
-        if (!TextUtils.isEmpty(realm)) {
-            request.set("realm", realm);
+        // This are extra query parameters that can be specific to an OP. For instance for OpenAm
+        // we can define 'realm' that defines to which sub realm the request is going to.
+        if (extras != null) {
+            for (Map.Entry<String, String> queryParam : extras.entrySet()) {
+                request.set(queryParam.getKey(), queryParam.getValue());
+            }
         }
 
         //OPTIONAL OIDC request params
@@ -97,11 +118,9 @@ public class OIDCUtils {
      * When using the Hybrid Flow, some tokens are returned from the Authorization Endpoint and
      * others are returned from the Token Endpoint.
      * @see <a href="http://openid.net/specs/openid-connect-core-1_0.html#HybridFlowAuth">Hybrid Flow</a>
-     * <br/>
-     * <b>NOTE : The realm parameter is usually OpenAm specific. For other OP it should be set to null</b>
      */
-    public static String hybridFlowAuthenticationUrl(String authorizationServerUrl, String realm, String clientId,
-                                                     String redirectUrl, String[] scopes) {
+    public static String hybridFlowAuthenticationUrl(String authorizationServerUrl, String clientId,
+                                                     String redirectUrl, String[] scopes, Map<String, String> extras) {
 
         // The response type "code" is the only mandatory response type on hybrid flow, it must be
         // coupled with other response types to form one of the following values : "code id_token",
@@ -121,10 +140,12 @@ public class OIDCUtils {
                 .set("nonce", "");
         //TODO: nonce is mandatory we should try to generate one
 
-        // This may be OpenAm specific, where we can have realms that each can define different level
-        // of access. This enables to define different endpoints on the same domain or base url.
-        if (!TextUtils.isEmpty(realm)) {
-            request.set("realm", realm);
+        // This are extra query parameters that can be specific to an OP. For instance for OpenAm
+        // we can define 'realm' that defines to which sub realm the request is going to.
+        if (extras != null) {
+            for (Map.Entry<String, String> queryParam : extras.entrySet()) {
+                request.set(queryParam.getKey(), queryParam.getValue());
+            }
         }
 
         //OPTIONAL OIDC request params
@@ -151,11 +172,9 @@ public class OIDCUtils {
      * The Authorization Server can authenticate the Client before exchanging the Authorization Code
      * for an Access Token.
      * @see <a href="http://openid.net/specs/openid-connect-core-1_0.html#CodeFlowAuth">Code Flow</a>
-     * <br/>
-     * <b>NOTE : The realm parameter is usually OpenAm specific. For other OP it should be set to null</b>
      */
-    public static String codeFlowAuthenticationUrl(String authorizationServerUrl, String realm, String clientId,
-                                                   String redirectUrl, String[] scopes) {
+    public static String codeFlowAuthenticationUrl(String authorizationServerUrl, String clientId,
+                                                   String redirectUrl, String[] scopes, Map<String,String> extras) {
 
         List<String> scopesList = Arrays.asList(scopes);
 
@@ -166,10 +185,12 @@ public class OIDCUtils {
                 .set("nonce", "");
         //TODO: nonce is mandatory we should try to generate one
 
-        // This may be OpenAm specific, where we can have realms that each can define different level
-        // of access. This enables to define different endpoints on the same domain or base url.
-        if (!TextUtils.isEmpty(realm)) {
-            request.set("realm", realm);
+        // This are extra query parameters that can be specific to an OP. For instance for OpenAm
+        // we can define 'realm' that defines to which sub realm the request is going to.
+        if (extras != null) {
+            for (Map.Entry<String, String> queryParam : extras.entrySet()) {
+                request.set(queryParam.getKey(), queryParam.getValue());
+            }
         }
 
         //OPTIONAL OIDC request params
@@ -190,22 +211,29 @@ public class OIDCUtils {
         return request.build();
     }
 
-    public static String newAuthenticationUrl(String authorizationServerUrl, String realm,
-                                              Config.Flows flowType, String clientId,
-                                              String redirectUrl, String[] scopes) {
+
+    public static String newAuthenticationUrl(String authorizationServerUrl, OIDCUtils.Flows flowType,
+                                              String clientId, String redirectUrl, String[] scopes) {
+
+        return newAuthenticationUrl(authorizationServerUrl, flowType, clientId, redirectUrl, scopes, null);
+    }
+
+    public static String newAuthenticationUrl(String authorizationServerUrl, OIDCUtils.Flows flowType,
+                                              String clientId, String redirectUrl, String[] scopes,
+                                              Map<String, String> extras) {
         String request;
         switch (flowType) {
             case Implicit: {
-                request = implicitFlowAuthenticationUrl(authorizationServerUrl, realm, clientId, redirectUrl, scopes);
+                request = implicitFlowAuthenticationUrl(authorizationServerUrl, clientId, redirectUrl, scopes, extras);
                 break;
             }
             case Hybrid: {
-                request = hybridFlowAuthenticationUrl(authorizationServerUrl, realm, clientId, redirectUrl, scopes);
+                request = hybridFlowAuthenticationUrl(authorizationServerUrl, clientId, redirectUrl, scopes, extras);
                 break;
             }
             case Code:
             default: {
-                request = codeFlowAuthenticationUrl(authorizationServerUrl, realm, clientId, redirectUrl, scopes);
+                request = codeFlowAuthenticationUrl(authorizationServerUrl, clientId, redirectUrl, scopes, extras);
                 break;
             }
         }
@@ -220,13 +248,18 @@ public class OIDCUtils {
      * Code for an Access Token.
      *
      * Needs to be run on a separate thread.
-     * <br/>
-     * <b>NOTE : The realm parameter is usually OpenAm specific. For other OP it should be set to null</b>
      * @throws IOException
      */
-    public static TokenResponse requestTokensWithCodeGrant(String tokenServerUrl, String realm, String redirectUrl,
+    public static TokenResponse requestTokensWithCodeGrant(String tokenServerUrl, String redirectUrl,
                                                            String clientId, String clientSecret,
                                                            String authCode, boolean isOIDC) throws IOException {
+        return requestTokensWithCodeGrant(tokenServerUrl, redirectUrl, clientId, clientSecret, authCode, isOIDC, null);
+    }
+
+    public static TokenResponse requestTokensWithCodeGrant(String tokenServerUrl, String redirectUrl,
+                                                           String clientId, String clientSecret,
+                                                           String authCode, boolean isOIDC,
+                                                           Map<String,String> extras) throws IOException {
 
         AuthorizationCodeTokenRequest request = new AuthorizationCodeTokenRequest(
                 AndroidHttp.newCompatibleTransport(),
@@ -236,10 +269,12 @@ public class OIDCUtils {
         );
         request.set("redirect_uri", redirectUrl);
 
-        // This may be OpenAm specific, where we can have realms that each can define different level
-        // of access. This enables to define different endpoints on the same domain or base url.
-        if (!TextUtils.isEmpty(realm)) {
-            request.set("realm", realm);
+        // This are extra query parameters that can be specific to an OP. For instance for OpenAm
+        // we can define 'realm' that defines to which sub realm the request is going to.
+        if (extras != null) {
+            for (Map.Entry<String, String> queryParam : extras.entrySet()) {
+                request.set(queryParam.getKey(), queryParam.getValue());
+            }
         }
 
         if (!TextUtils.isEmpty(clientSecret)) {
@@ -276,9 +311,14 @@ public class OIDCUtils {
     }
 
 
-    public static TokenResponse requestTokensWithPasswordGrant(String tokenServerUrl, String realm, String redirectUrl,
-                                                               String clientId, String clientSecret, String[] scopes,
-                                                               String userName, String userPwd) throws IOException {
+    public static TokenResponse requestTokensWithPasswordGrant(String tokenServerUrl,String clientId, String clientSecret,
+                                                               String[] scopes, String userName, String userPwd) throws IOException {
+        return requestTokensWithPasswordGrant(tokenServerUrl, clientId, clientSecret, scopes, userName, userPwd, null);
+    }
+
+    public static TokenResponse requestTokensWithPasswordGrant(String tokenServerUrl,String clientId, String clientSecret,
+                                                               String[] scopes, String userName, String userPwd,
+                                                               Map<String,String> extras) throws IOException {
 
         List<String> scopesList = Arrays.asList(scopes);
 
@@ -289,15 +329,17 @@ public class OIDCUtils {
                 userName,
                 userPwd
         );
-//        request.set("redirect_uri", redirectUrl); //TODO see if needed
+
         if (!scopesList.isEmpty()) {
             request.setScopes(scopesList);
         }
 
-        // This may be OpenAm specific, where we can have realms that each can define different level
-        // of access. This enables to define different endpoints on the same domain or base url.
-        if (!TextUtils.isEmpty(realm)) {
-            request.set("realm", realm);
+        // This are extra query parameters that can be specific to an OP. For instance for OpenAm
+        // we can define 'realm' that defines to which sub realm the request is going to.
+        if (extras != null) {
+            for (Map.Entry<String, String> queryParam : extras.entrySet()) {
+                request.set(queryParam.getKey(), queryParam.getValue());
+            }
         }
 
         if (!TextUtils.isEmpty(clientSecret)) {
@@ -343,12 +385,15 @@ public class OIDCUtils {
      *
      * Note that the Token Server may require you to use the `offline_access` scope to receive
      * Refresh Tokens.
-     * <br/>
-     * <b>NOTE : The realm parameter is usually OpenAm specific. For other OP it should be set to null</b>
+     *
      */
-    public static TokenResponse refreshTokens(String tokenServerUrl, String realm, String clientId,
-                                              String clientSecret, String[] scopes,
-                                              String refreshToken) throws IOException {
+    public static TokenResponse refreshTokens(String tokenServerUrl, String clientId, String clientSecret,
+                                              String[] scopes, String refreshToken) throws IOException {
+        return refreshTokens(tokenServerUrl, clientId, clientSecret, scopes, refreshToken, null);
+    }
+
+    public static TokenResponse refreshTokens(String tokenServerUrl, String clientId, String clientSecret,
+                                              String[] scopes, String refreshToken, Map<String, String> extras) throws IOException {
 
         List<String> scopesList = Arrays.asList(scopes);
 
@@ -363,12 +408,15 @@ public class OIDCUtils {
             request.setScopes(scopesList);
         }
 
-        // This is OpenAm specific, where we can have realms that each can define different level
-        // of access. This enables to define different endpoints on the same domain or base url.
-        if (!TextUtils.isEmpty(realm)) {
-            request.set("realm", realm);
+        // This are extra query parameters that can be specific to an OP. For instance for OpenAm
+        // we can define 'realm' that defines to which sub realm the request is going to.
+        if (extras != null) {
+            for (Map.Entry<String, String> queryParam : extras.entrySet()) {
+                request.set(queryParam.getKey(), queryParam.getValue());
+            }
         }
 
+        // If the oidc client is confidential (needs authentication)
         if (!TextUtils.isEmpty(clientSecret)) {
             request.setClientAuthentication(new BasicAuthentication(clientId, clientSecret));
         } else {
@@ -405,7 +453,7 @@ public class OIDCUtils {
      * Gets user information from the UserInfo endpoint.
      */
     public static Map getUserInfo(String userInfoUrl, String idToken) throws IOException {
-        return getUserInfo(userInfoUrl, null, idToken);
+        return getUserInfo(userInfoUrl, idToken, null);
     }
 
 
@@ -415,15 +463,9 @@ public class OIDCUtils {
      * <br/>
      * <b>NOTE : This call is usually OpenAm specific.</b>
      */
-    public static Map getUserInfo(String userInfoUrl, String realm, String idToken) throws IOException {
-
-        // This is OpenAm specific, where we can have realms that each can define different level
-        // of access. This enables to define different endpoints on the same domain or base url.
-        if (!TextUtils.isEmpty(realm)) {
-            ArrayMap<String, String> params = new ArrayMap<>();
-            params.put("realm", realm);
-
-            HttpRequest.append(userInfoUrl, params);
+    public static Map getUserInfo(String userInfoUrl, String idToken, Map<String,String> extras) throws IOException {
+        if (extras != null) {
+            HttpRequest.append(userInfoUrl, extras);
         }
 
         HttpRequest request = new HttpRequest(userInfoUrl, HttpRequest.METHOD_GET);

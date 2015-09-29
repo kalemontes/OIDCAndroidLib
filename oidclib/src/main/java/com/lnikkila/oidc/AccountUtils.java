@@ -47,7 +47,7 @@ public class AccountUtils {
     }
 
     @SuppressWarnings("deprecation")
-    public static String requestAccessToken(Account account, boolean doRetry, Bundle options,
+    public static String requestAccessToken(Account account, boolean doRetry,
                                             AccountManagerCallback<Bundle> callback,
                                             AccountManager accountManager) throws IOException {
         String accessToken;
@@ -73,10 +73,10 @@ public class AccountUtils {
             else {
                 if (doRetry) {
                     futureManager = accountManager.getAuthToken(account,
-                            Authenticator.TOKEN_TYPE_ACCESS, options, false, null, null);
+                            Authenticator.TOKEN_TYPE_ACCESS, null, false, null, null);
                 } else {
                     futureManager = accountManager.getAuthToken(account,
-                            Authenticator.TOKEN_TYPE_ACCESS, options, true, callback, null);
+                            Authenticator.TOKEN_TYPE_ACCESS, null, true, callback, null);
                 }
             }
             accessToken = futureManager.getResult().getString(AccountManager.KEY_AUTHTOKEN);

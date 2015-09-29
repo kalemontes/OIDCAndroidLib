@@ -4,19 +4,16 @@ import android.accounts.AbstractAccountAuthenticator;
 import android.accounts.Account;
 import android.accounts.AccountAuthenticatorResponse;
 import android.accounts.AccountManager;
-import android.accounts.AccountManagerCallback;
 import android.accounts.NetworkErrorException;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
-import android.os.Handler;
 import android.text.TextUtils;
 import android.util.Log;
 
 import com.google.api.client.auth.oauth2.TokenResponse;
 import com.google.api.client.auth.oauth2.TokenResponseException;
 import com.lnikkila.oidc.AccountUtils;
-import com.lnikkila.oidc.Config;
 import com.lnikkila.oidc.OIDCUtils;
 import com.lnikkila.oidc.R;
 
@@ -46,6 +43,12 @@ public class Authenticator extends AbstractAccountAuthenticator {
 
     protected final String tokenEndpoint;
 
+    protected final String clientId;
+    protected final String clientSecret;
+    protected final String redirectUrl;
+    protected final String[] scopes;
+    protected final String flowType;
+
     public static final String TOKEN_TYPE_ID = "com.lnikkila.oidcsample.TOKEN_TYPE_ID";
     public static final String TOKEN_TYPE_ACCESS = "com.lnikkila.oidcsample.TOKEN_TYPE_ACCESS";
     public static final String TOKEN_TYPE_REFRESH = "com.lnikkila.oidcsample.TOKEN_TYPE_REFRESH";
@@ -56,7 +59,13 @@ public class Authenticator extends AbstractAccountAuthenticator {
 
         this.accountManager = AccountManager.get(context);
 
-        this.tokenEndpoint = this.context.getString(R.string.tokenEndpoint);
+        this.tokenEndpoint = this.context.getString(R.string.op_tokenEndpoint);
+
+        this.clientId      = this.context.getString(R.string.oidc_clientId);
+        this.clientSecret  = this.context.getString(R.string.oidc_clientSecret);
+        this.redirectUrl   = this.context.getString(R.string.oidc_redirectUrl);
+        this.scopes        = this.context.getResources().getStringArray(R.array.oidc_scopes);
+        this.flowType      = this.context.getString(R.string.oidc_flowType);
 
         Log.d(TAG, "Authenticator created.");
     }
@@ -74,7 +83,7 @@ public class Authenticator extends AbstractAccountAuthenticator {
 
         Bundle result = new Bundle();
 
-        Intent intent = createIntentForAuthorization(response, options);
+        Intent intent = createIntentForAuthorization(response);
 
         // We're creating a new account, not just renewing our authorisation
         intent.putExtra(AuthenticatorActivity.KEY_IS_NEW_ACCOUNT, true);
@@ -98,16 +107,6 @@ public class Authenticator extends AbstractAccountAuthenticator {
         // Try to retrieve a stored token
         String token = accountManager.peekAuthToken(account, authTokenType);
 
-        // Enables pre-ICS support.
-        if(options == null || options.isEmpty()) {
-            Log.i(TAG, "Trying to load OIDC client options from UserData");
-            options = OIDCOptionsFromUserData(account);
-        }
-        else {
-            Log.i(TAG, "OIDC client options where on request call");
-            Log.d(TAG, options.toString());
-        }
-
         if (TextUtils.isEmpty(token)) {
             // If we don't have one or the token has been invalidated, we need to check if we have
             // a refresh token
@@ -122,7 +121,7 @@ public class Authenticator extends AbstractAccountAuthenticator {
 
                 Bundle result = new Bundle();
 
-                Intent intent = createIntentForAuthorization(response, options);
+                Intent intent = createIntentForAuthorization(response);
 
                 // Provide the account that we need re-authorised
                 intent.putExtra(AuthenticatorActivity.KEY_ACCOUNT_OBJECT, account);
@@ -134,7 +133,7 @@ public class Authenticator extends AbstractAccountAuthenticator {
                 Log.d(TAG, "Got refresh token, getting new tokens.");
 
                 try {
-                    refreshTokens(account, refreshToken, options);
+                    refreshTokens(account, refreshToken);
                 }
                 catch (TokenResponseException e) {
                     // If the refresh token has expired, we need to launch an intent for the user
@@ -144,7 +143,7 @@ public class Authenticator extends AbstractAccountAuthenticator {
 
                     Bundle result = new Bundle();
 
-                    Intent intent = createIntentForAuthorization(response, options);
+                    Intent intent = createIntentForAuthorization(response);
 
                     // Provide the account that we need re-authorised
                     intent.putExtra(AuthenticatorActivity.KEY_ACCOUNT_OBJECT, account);
@@ -173,45 +172,23 @@ public class Authenticator extends AbstractAccountAuthenticator {
      * Refreshes all account tokens by requesting new tokens to the access_token endpoint using the given refreshToken.
      * @param account the account whose token should be refreshed, will never be null
      * @param refreshToken the refresh token to be use
-     * @param options contains the OIDC client options (clientId, clientSecret, redirectUrl, scopes)
      * @throws TokenResponseException when refreshToken is invalid or expired
      */
-    private void refreshTokens(Account account, String refreshToken, Bundle options) throws TokenResponseException {
+    protected void refreshTokens(Account account, String refreshToken) throws TokenResponseException {
         try {
-            if (options != null) {
-                if (options.containsKey(AuthenticatorActivity.KEY_OPT_OIDC_CLIENT_ID) &&
-                        options.containsKey(AuthenticatorActivity.KEY_OPT_OIDC_CLIENT_SECRET) &&
-                        options.containsKey(AuthenticatorActivity.KEY_OPT_OIDC_CLIENT_SCOPES)) {
-                    //The OIDC client options are correctly set.
-                    Log.d(TAG, "The OIDC client options are correctly set.");
+            if (checkOIDCClientConfiguration(clientId, clientSecret, redirectUrl, scopes, flowType)) {
+                Log.d(TAG, "The OIDC client options are correctly set.");
 
-                    String clientId = options.getString(AuthenticatorActivity.KEY_OPT_OIDC_CLIENT_ID);
-                    String clientSecret = options.getString(AuthenticatorActivity.KEY_OPT_OIDC_CLIENT_SECRET);
-                    String[] scopes = options.getStringArray(AuthenticatorActivity.KEY_OPT_OIDC_CLIENT_SCOPES);
-                    String realm = options.getString(AuthenticatorActivity.KEY_OPT_OIDC_CLIENT_REALM);
+                TokenResponse tokenResponse = OIDCUtils.refreshTokens(
+                        tokenEndpoint, clientId, clientSecret, scopes, refreshToken);
 
-                    TokenResponse tokenResponse = OIDCUtils.refreshTokens(
-                            tokenEndpoint,
-                            realm,
-                            clientId,
-                            clientSecret,
-                            scopes,
-                            refreshToken);
-
-                    Log.d(TAG, "Got new tokens.");
-                    AccountUtils.saveTokens(accountManager, account, tokenResponse);
-                }
-                else {
-                    //The OIDC client options are not correctly set.
-                    //This usually means that the app using the lib didn't set them as it should when making an explicit call to authenticator.
-                    throw new IOException("Missing OIDC client configuration");
-                }
+                Log.d(TAG, "Got new tokens.");
+                AccountUtils.saveTokens(accountManager, account, tokenResponse);
             }
             else {
                 // The OIDC client options are NOT set.
-                // This case usually happends when trying to renew token via Android's system settings (Sync).
-                //TODO: see what we can do here
-                throw new IOException("OIDC client configuration is not set");
+                Log.e(TAG, "OIDC client options are missing or not correctly set");
+                throw new IOException("OIDC client options are missing or not correctly set");
             }
         }
         catch (TokenResponseException e) {
@@ -234,88 +211,31 @@ public class Authenticator extends AbstractAccountAuthenticator {
     /**
      * Create an intent for showing the authorisation web page.
      * @param response response to send the result back to the AccountManager, will never be null
-     * @param options contains the OIDC client options (clientId, clientSecret, redirectUrl, scopes)
      * @return an intent to open AuthenticatorActivity with AuthenticatorActivity.KEY_PRESENT_OPTS_FORM extra
      * set to false if OIDC client correctly options are set (true otherwise).
      */
-    private Intent createIntentForAuthorization(AccountAuthenticatorResponse response, Bundle options) {
-        Intent intent = new Intent(context, AuthenticatorActivity.class);
+    protected Intent createIntentForAuthorization(AccountAuthenticatorResponse response) {
+        Intent intent = null;
 
-        if (options != null) {
-            intent.putExtras(options);
-
-            if (options.containsKey(AuthenticatorActivity.KEY_OPT_OIDC_CLIENT_ID) &&
-                    options.containsKey(AuthenticatorActivity.KEY_OPT_OIDC_CLIENT_SECRET) &&
-                    options.containsKey(AuthenticatorActivity.KEY_OPT_OIDC_CLIENT_REURL) &&
-                    options.containsKey(AuthenticatorActivity.KEY_OPT_OIDC_CLIENT_SCOPES) &&
-                    options.containsKey(AuthenticatorActivity.KEY_OPT_OIDC_CLIENT_FLOW_TYPE)) {
-                //The OIDC client options are correctly set.
-                Log.d(TAG, "The OIDC client options are correctly set.");
-
-                //This means we will be able to created authorisation URL directly.
-                intent.putExtra(AuthenticatorActivity.KEY_PRESENT_OPTS_FORM, false);
-            }
-            else {
-                //The OIDC client options are not correctly set.
-                //This usually means that the app using the lib didn't set them as it should when making an explicit call to authenticator.
-                Log.w(TAG, "Some OIDC client options are missing. Using form intent option so user can set them.");
-
-                //The user will have to set them via the form that will be presented on the AuthenticatorActivity.
-                intent.putExtra(AuthenticatorActivity.KEY_PRESENT_OPTS_FORM, true);
-            }
+        if (checkOIDCClientConfiguration(clientId, clientSecret, redirectUrl, scopes, flowType)) {
+            intent = new Intent(context, AuthenticatorActivity.class);
+            intent.putExtra(AccountManager.KEY_ACCOUNT_AUTHENTICATOR_RESPONSE, response);
         }
         else {
-            // The OIDC client options are NOT set.
-            // This case usually happends when the user adds a new account through Android's system settings.
-            Log.d(TAG, "The OIDC client options are not set. Using form intent option so user can set them.");
-
-            //The user will have to set them via the form that will be presented on the AuthenticatorActivity.
-            intent.putExtra(AuthenticatorActivity.KEY_PRESENT_OPTS_FORM, true);
+            Log.e(TAG, "OIDC client options are missing or not correctly set");
         }
-
-        intent.putExtra(AccountManager.KEY_ACCOUNT_AUTHENTICATOR_RESPONSE, response);
 
         return intent;
     }
 
     /**
-     * <p>
-     *     Fetches OIDC options that are store in the account UserData and returns them in a bundle.
-     * </p>
-     * <p>
-     *      <b>This is needed to enable pre-ICS support.</b>
-     *      Apps can call the AccountManager using the deprecated method
-     *      {@link AccountManager#getAuthToken(Account, String, boolean, AccountManagerCallback, Handler)}
-     *      to request tokens. Before doing this they have to ensure that this options were set as UserData
-     *      on account creation.
-     * </p>
-     * <p>
-     *     {@link AccountManager#getAuthToken(Account, String, Bundle, boolean, AccountManagerCallback, Handler)}
-     *     should be ALWAYS use for post-ICS passing the options as parameter and not setting any UserData
-     *     on account creation.
-     * </p>
-     * @param account the account where the options are saved
-     * @return OIDC options as a bundle or null if the options were NOT correctly set on account creation.
+     * Checks if OIDC client settings are correctly set.
+     * @return true if all expected settings are set, false otherwise.
      */
-    private Bundle OIDCOptionsFromUserData(Account account) {
-        String clientId = accountManager.getUserData(account, AuthenticatorActivity.KEY_OPT_OIDC_CLIENT_ID);
-        String clientSecret = accountManager.getUserData(account, AuthenticatorActivity.KEY_OPT_OIDC_CLIENT_SECRET);
-        String redirectUrl = accountManager.getUserData(account, AuthenticatorActivity.KEY_OPT_OIDC_CLIENT_REURL);
-        String scopesAsString = accountManager.getUserData(account, AuthenticatorActivity.KEY_OPT_OIDC_CLIENT_SCOPES);
-        String[] scopes = scopesAsString != null ? TextUtils.split(scopesAsString, " ") : null;
-        String realm = accountManager.getUserData(account, AuthenticatorActivity.KEY_OPT_OIDC_CLIENT_REALM);
-
-        Bundle options = null;
-        if(!TextUtils.isEmpty(clientId) && !TextUtils.isEmpty(clientSecret) && !TextUtils.isEmpty(redirectUrl) && scopes != null) {
-            options =  new Bundle();
-            options.putString(AuthenticatorActivity.KEY_OPT_OIDC_CLIENT_ID, clientId);
-            options.putString(AuthenticatorActivity.KEY_OPT_OIDC_CLIENT_SECRET, clientSecret);
-            options.putString(AuthenticatorActivity.KEY_OPT_OIDC_CLIENT_REURL, redirectUrl);
-            options.putStringArray(AuthenticatorActivity.KEY_OPT_OIDC_CLIENT_SCOPES, scopes);
-            options.putString(AuthenticatorActivity.KEY_OPT_OIDC_CLIENT_REALM, realm);
-        }
-
-        return options;
+    protected boolean checkOIDCClientConfiguration(String clientId, String clientSecret, String redirectUrl, String[] scopes, String flowType) {
+        return !TextUtils.isEmpty(clientId) && !TextUtils.isEmpty(clientSecret) &&
+                !TextUtils.isEmpty(redirectUrl) && scopes.length > 0 &&
+                !TextUtils.isEmpty(flowType) && OIDCUtils.isSupportedFlow(flowType);
     }
 
     @Override

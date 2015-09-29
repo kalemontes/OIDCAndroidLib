@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    // TODO: Add the OIDC endpoints information you received from your OIDC provider below.
-    <string name="authorizationEnpoint">https://www.example.com/oauth2/authorize</string>
-    <string name="tokenEndpoint">https://www.example.com/oauth2/token</string>
-    <string name="userInfoEndpoint">https://www.example.com/oauth2/userinfo</string>
-    <string name="revocationEndpoint">https://www.example.com/oauth2/revoketoken</string>
-</resources>
