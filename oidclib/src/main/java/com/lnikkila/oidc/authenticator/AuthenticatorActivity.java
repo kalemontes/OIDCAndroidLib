@@ -770,7 +770,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
     private void createAccount(IdTokenResponse response) {
         Log.d(TAG, "Creating account.");
 
-        String accountType = getString(R.string.ACCOUNT_TYPE);
+        String accountType = getString(R.string.account_authenticator_type);
 
         // AccountManager expects that each account has a unique username. If a new account has the
         // same username as a previously created one, it will overwrite the older account.
@@ -821,7 +821,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
     private void createAccount(TokenResponse response) {
         Log.d(TAG, "Creating account.");
 
-        String accountType = getString(R.string.ACCOUNT_TYPE);
+        String accountType = getString(R.string.account_authenticator_type);
         String accountName = getString(R.string.app_name);
 
         account = new Account(accountName, accountType);
