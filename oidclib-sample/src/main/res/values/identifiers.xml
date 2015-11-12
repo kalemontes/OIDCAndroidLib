@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The strings in this file are not to be translated.
+-->
+<resources>
+
+    <!-- An identifier for the account type that this app provides. This will overwrite the default provided by the oidc lib  -->
+    <string name="account_authenticator_type">com.my_own_account_type_identifier.account</string>
+
+    <!-- An name for the account that this app provides. This will overwrite the default provided by the oidc lib -->
+    <string name="account_authenticator_label">OIDC Lib Sample Account</string>
+
+</resources>

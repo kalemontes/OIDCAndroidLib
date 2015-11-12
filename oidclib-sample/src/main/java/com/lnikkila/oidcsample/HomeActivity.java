@@ -4,13 +4,14 @@ import android.accounts.Account;
 import android.accounts.AccountManager;
 import android.accounts.AccountManagerCallback;
 import android.accounts.AccountManagerFuture;
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
-import android.content.Intent;
 import android.os.AsyncTask;
-import android.os.Build;
 import android.os.Bundle;
+import android.text.TextUtils;
+import android.util.Log;
 import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
@@ -27,10 +28,15 @@ import java.util.Map;
  * @author Leo Nikkilä
  * @author Camilo Montes
  */
-public class HomeActivity extends Activity implements TokensExpiredDialogListener {
+@SuppressLint("SetTextI18n")
+public class HomeActivity extends Activity  {
+
+    private static final String TAG = HomeActivity.class.getSimpleName();
 
     //TODO: set your protected resource url
     private static final String protectedResUrl = "https://www.example.com/res/my_res";
+
+    protected String userInfoEndpoint;
 
     private Button loginButton;
     private Button requestButton;
@@ -40,12 +46,15 @@ public class HomeActivity extends Activity implements TokensExpiredDialogListene
     private Account availableAccounts[];
 
     private int selectedAccountIndex;
-    private TokensExpiredCallBack accountCallBack;
+
+    //region Activity Lifecycle
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_home);
+
+        userInfoEndpoint = getString(R.string.op_userInfoEndpoint);
 
         loginButton = (Button) findViewById(R.id.loginButton);
         requestButton = (Button) findViewById(R.id.requestButton);
@@ -53,7 +62,6 @@ public class HomeActivity extends Activity implements TokensExpiredDialogListene
         progressBar.setVisibility(View.INVISIBLE);
 
         accountManager = AccountManager.get(this);
-        accountCallBack = new TokensExpiredCallBack(this, this);
     }
 
     @Override
@@ -70,11 +78,17 @@ public class HomeActivity extends Activity implements TokensExpiredDialogListene
         }
     }
 
+    //endregion
+
+    //region Account Utilities
+
     protected void refreshAvailableAccounts() {
         // Grab all our accounts
-        String accountType = getString(R.string.ACCOUNT_TYPE);
+        String accountType = getString(R.string.account_authenticator_type);
         availableAccounts = accountManager.getAccountsByType(accountType);
     }
+
+    //endregion
 
     //region Buttons ClickListeners
 
@@ -85,13 +99,12 @@ public class HomeActivity extends Activity implements TokensExpiredDialogListene
 
         requestButton.setText(R.string.requestButton);
 
-        String accountType = getString(R.string.ACCOUNT_TYPE);
-        Bundle options = Config.getOIDCClientOptions();
+        String accountType = getString(R.string.account_authenticator_type);
 
         switch (availableAccounts.length) {
             // No account has been created, let's create one now
             case 0:
-                accountManager.addAccount(accountType, Authenticator.TOKEN_TYPE_ID, null, options,
+                accountManager.addAccount(accountType, Authenticator.TOKEN_TYPE_ID, null, null,
                         this, new AccountManagerCallback<Bundle>() {
                             @Override
                             public void run(AccountManagerFuture<Bundle> futureManager) {
@@ -100,13 +113,15 @@ public class HomeActivity extends Activity implements TokensExpiredDialogListene
                                 if (!futureManager.isCancelled()) {
                                     refreshAvailableAccounts();
 
-                                    //NOTE: this is absoluptly needed for pre-ICS devices
-                                    if(Build.VERSION.SDK_INT < Build.VERSION_CODES.ICE_CREAM_SANDWICH) {
-                                        Account account = availableAccounts[0];
-                                        Config.setOIDCClientOptions(accountManager, account);
+                                    if (availableAccounts.length > 0) {
+                                        // if we have an user endpoint we try to get userinfo with the receive token
+                                        if (!TextUtils.isEmpty(userInfoEndpoint)) {
+                                            new LoginTask().execute(availableAccounts[0]);
+                                        }
+                                    } else {
+                                        Log.e(TAG, "Couldn't create a new account");
                                     }
 
-                                    doLogin(view);
                                 }
                             }
                         }, null);
@@ -114,7 +129,10 @@ public class HomeActivity extends Activity implements TokensExpiredDialogListene
 
             // There's just one account, let's use that
             case 1:
-                new ApiTask().execute(availableAccounts[0]);
+                // if we have an user endpoint we try to get userinfo with the receive token
+                if (!TextUtils.isEmpty(userInfoEndpoint)) {
+                    new LoginTask().execute(availableAccounts[0]);
+                }
                 break;
 
             // Multiple accounts, let the user pick one
@@ -133,7 +151,11 @@ public class HomeActivity extends Activity implements TokensExpiredDialogListene
                                     @Override
                                     public void onClick(DialogInterface dialog, int selectedAccount) {
                                         selectedAccountIndex = selectedAccount;
-                                        new ApiTask().execute(availableAccounts[selectedAccountIndex]);
+
+                                        // if we have an user endpoint we try to get userinfo with the receive token
+                                        if (!TextUtils.isEmpty(userInfoEndpoint)) {
+                                            new LoginTask().execute(availableAccounts[selectedAccountIndex]);
+                                        }
                                     }
                                 })
                         .create()
@@ -147,26 +169,9 @@ public class HomeActivity extends Activity implements TokensExpiredDialogListene
 
     //endregion
 
-    //region TokensExpiredDialogListener
-
-    @Override
-    public void onRenewTokens(Intent renewIntent) {
-        if (renewIntent != null) {
-            renewIntent.setFlags(0);
-            this.startActivity(renewIntent);
-        }
-    }
-
-    @Override
-    public void onDoNotRevewTokens() {
-
-    }
-
-    //endregion
-
     //region Background tasks
 
-    private class ApiTask extends AsyncTask<Account, Void, Map> {
+    private class LoginTask extends AsyncTask<Account, Void, Map> {
 
         @Override
         protected void onPreExecute() {
@@ -181,10 +186,9 @@ public class HomeActivity extends Activity implements TokensExpiredDialogListene
         @Override
         protected Map doInBackground(Account... args) {
             Account account = args[0];
-            Bundle options = Config.getOIDCClientOptions();
 
             try {
-                return APIUtility.getJson(HomeActivity.this, com.lnikkila.oidc.Config.userInfoUrl, account, options, accountCallBack);
+                return APIUtility.getJson(HomeActivity.this, userInfoEndpoint, account, null);
             } catch (IOException e) {
                 e.printStackTrace();
                 return null;
@@ -200,8 +204,10 @@ public class HomeActivity extends Activity implements TokensExpiredDialogListene
 
             if (result == null) {
                 loginButton.setText("Couldn't get user info");
+                Log.w(TAG, "We couldn't fetch userinfo from server");
             } else {
                 loginButton.setText("Logged in as " + result.get("given_name"));
+                Log.i(TAG, "We manage to login user to server");
             }
         }
     }
@@ -220,10 +226,9 @@ public class HomeActivity extends Activity implements TokensExpiredDialogListene
         @Override
         protected Map doInBackground(Account... args) {
             Account account = args[0];
-            Bundle options = Config.getOIDCClientOptions();
 
             try {
-                return APIUtility.getJson(HomeActivity.this, protectedResUrl, account, options, accountCallBack);
+                return APIUtility.getJson(HomeActivity.this, protectedResUrl, account, null);
             } catch (IOException e) {
                 e.printStackTrace();
                 return null;

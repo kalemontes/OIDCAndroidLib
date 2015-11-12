@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stores OpenID Connect provider endpoints. -->
+<resources>
+    <string name="op_authorizationEnpoint">https://www.example.com/oauth2/authorize</string>
+    <string name="op_tokenEndpoint">https://www.example.com/oauth2/token</string>
+    <string name="op_userInfoEndpoint">https://www.example.com/oauth2/userinfo</string>
+    <string name="op_revocationEndpoint">https://www.example.com/oauth2/revoketoken</string>
+</resources>

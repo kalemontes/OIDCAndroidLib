@@ -3,13 +3,12 @@ package com.lnikkila.oidcsample;
 import android.accounts.Account;
 import android.accounts.AccountManager;
 import android.accounts.AccountManagerCallback;
-import android.accounts.AccountManagerFuture;
 import android.content.Context;
-import android.os.Build;
 import android.os.Bundle;
 
 import com.github.kevinsawicki.http.HttpRequest;
 import com.google.gson.Gson;
+import com.lnikkila.oidc.AccountUtils;
 import com.lnikkila.oidc.OIDCUtils;
 import com.lnikkila.oidc.authenticator.Authenticator;
 
@@ -32,10 +31,10 @@ public class APIUtility {
      * Makes a GET request and parses the received JSON string as a Map.
      */
     public static Map getJson(Context context, String url, Account account,
-                              Bundle options, AccountManagerCallback<Bundle> callback)
+                              AccountManagerCallback<Bundle> callback)
             throws IOException {
 
-        String jsonString = makeRequest(context, HttpRequest.METHOD_GET, url, account, options, callback);
+        String jsonString = makeRequest(context, HttpRequest.METHOD_GET, url, account, callback);
         return new Gson().fromJson(jsonString, Map.class);
     }
 
@@ -46,19 +45,18 @@ public class APIUtility {
      * and the request will be retried. If the second try fails, an exception will be raised.
      */
     public static String makeRequest(Context context, String method, String url, Account account,
-                                     Bundle options, AccountManagerCallback<Bundle> callback)
+                                     AccountManagerCallback<Bundle> callback)
             throws IOException {
 
-        return makeRequest(context, method, url, account, true, options, callback);
+        return makeRequest(context, method, url, account, true, callback);
     }
 
-    @SuppressWarnings("deprecation")
     private static String makeRequest(final Context context, String method, String url, Account account,
-                                     boolean doRetry, Bundle options, AccountManagerCallback<Bundle> callback)
+                                      boolean doRetry, AccountManagerCallback<Bundle> callback)
             throws IOException {
 
         AccountManager accountManager = AccountManager.get(context);
-        String accessToken = requestAccessToken(account, doRetry, options, callback, accountManager);
+        String accessToken = AccountUtils.requestAccessToken(account, doRetry, callback, accountManager);
 
         // Prepare an API request using the accessToken
         HttpRequest request = new HttpRequest(url, method);
@@ -80,54 +78,16 @@ public class APIUtility {
             if (doRetry && (code == HTTP_UNAUTHORIZED || code == HTTP_FORBIDDEN ||
                     (code == HTTP_BAD_REQUEST && (requestContent.contains("invalid_grant") || requestContent.contains("Access Token not valid"))))) {
                 // We're being denied access on the first try, let's renew the token and retry
-                String accountType = context.getString(R.string.ACCOUNT_TYPE);
+                String accountType = context.getString(R.string.account_authenticator_type);
 
                 accountManager.setAuthToken(account, Authenticator.TOKEN_TYPE_ID, null);
                 accountManager.invalidateAuthToken(accountType, accessToken);
 
-                return makeRequest(context, method, url, account, false, options, callback);
+                return makeRequest(context, method, url, account, false, callback);
             } else {
                 // An unrecoverable error or the renewed token didn't work either
                 throw new IOException(request.code() + " " + request.message() + " " + requestContent);
             }
         }
     }
-
-    public static String requestAccessToken(Account account, boolean doRetry, Bundle options, AccountManagerCallback<Bundle> callback, AccountManager accountManager) throws IOException {
-        String accessToken;
-
-        // Try retrieving an access token from the account manager. The boolean true in the invocation
-        // tells Android to show a notification if the token can't be retrieved. When the
-        // notification is selected, it will launch the intent for re-authorisation. You could
-        // launch it automatically here if you wanted to by grabbing the intent from the bundle.
-        try {
-
-            AccountManagerFuture<Bundle> futureManager;
-
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.ICE_CREAM_SANDWICH) {
-                if (doRetry) {
-                    futureManager = accountManager.getAuthToken(account,
-                            Authenticator.TOKEN_TYPE_ACCESS, false, null, null);
-                }
-                else {
-                    futureManager = accountManager.getAuthToken(account,
-                            Authenticator.TOKEN_TYPE_ACCESS, true, callback, null);
-                }
-            }
-            else {
-                if (doRetry) {
-                    futureManager = accountManager.getAuthToken(account,
-                            Authenticator.TOKEN_TYPE_ACCESS, options, false, null, null);
-                } else {
-                    futureManager = accountManager.getAuthToken(account,
-                            Authenticator.TOKEN_TYPE_ACCESS, options, true, callback, null);
-                }
-            }
-            accessToken = futureManager.getResult().getString(AccountManager.KEY_AUTHTOKEN);
-        } catch (Exception e) {
-            throw new IOException("Could not get access token from account.", e);
-        }
-        return accessToken;
-    }
-
 }
