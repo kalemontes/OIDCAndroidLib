@@ -1,6 +1,12 @@
 # OIDCAndroidLib
 Android library module for OIDC inspired from https://github.com/learning-layers/android-openid-connect
 
+## How to use
+See the [wiki](https://github.com/kalemontes/OIDCAndroidLib/wiki) on how you should integrate this lib with you project :
+
+* [How to configure](https://github.com/kalemontes/OIDCAndroidLib/wiki/Using-the-lib)
+* [How to set the sample](https://github.com/kalemontes/OIDCAndroidLib/wiki/Setting-up-the-sample-project)
+
 #License 
 Copyright (c) 2015, Camilo Montes
 
