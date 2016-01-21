@@ -2,13 +2,13 @@ apply plugin: 'com.android.library'
 
 android {
     compileSdkVersion 23
-    buildToolsVersion '23.0.0'
+    buildToolsVersion '23.0.2'
 
     defaultConfig {
         minSdkVersion 9
-        targetSdkVersion 22
         versionCode 1
         versionName "1.0"
+        targetSdkVersion 23
     }
     buildTypes {
         release {
@@ -20,41 +20,38 @@ android {
 
 dependencies {
     compile fileTree(dir: 'libs', include: ['*.jar'])
-
     // For backwards compatibility, not necessarily needed
-    compile 'com.android.support:appcompat-v7:22.2.1'
-    compile 'com.android.support:design:22.2.1'
+    compile 'com.android.support:appcompat-v7:23.1.1'
+    compile 'com.android.support:design:23.1.1'
 
     // Google's OAuth library for OpenID Connect
     // See https://code.google.com/p/google-oauth-java-client/wiki/Setup
-    compile ('com.google.oauth-client:google-oauth-client:1.20.0') {
-        exclude group: 'xpp3', module: 'xpp3'
-        exclude group: 'org.apache.httpcomponents', module: 'httpclient'
+    compile('com.google.oauth-client:google-oauth-client:1.21.0') {
+        exclude group: 'com.google.http-client', module: 'google-http-client'
+        exclude group: 'com.google.code.findbugs', module: 'jsr305'
+        exclude group: 'com.google.http-client', module: 'google-http-client-jackson'
         exclude group: 'junit', module: 'junit'
-        exclude group: 'com.google.android', module: 'android'
         exclude group: 'com.google.guava', module: 'guava-jdk5'
+        exclude group: 'org.apache.httpcomponents', module: 'httpclient'
     }
-
     // Google's JSON parsing, could be replaced with Jackson
-    compile ('com.google.api-client:google-api-client-gson:1.20.0') {
-        exclude group: 'xpp3', module: 'xpp3'
+    compile('com.google.api-client:google-api-client-gson:1.21.0') {
+        exclude group: 'com.google.api-client', module: 'google-api-client'
+        exclude group: 'com.google.code.findbugs', module: 'jsr305'
         exclude group: 'org.apache.httpcomponents', module: 'httpclient'
-        exclude group: 'junit', module: 'junit'
-        exclude group: 'com.google.android', module: 'android'
-        exclude group: 'com.google.guava', module: 'guava-jdk5'
     }
-
     // For backwards compatibility, not necessarily needed
-    compile ('com.google.api-client:google-api-client-android:1.20.0') {
-        exclude group: 'xpp3', module: 'xpp3'
-        exclude group: 'org.apache.httpcomponents', module: 'httpclient'
-        exclude group: 'junit', module: 'junit'
+    compile('com.google.api-client:google-api-client-android:1.21.0') {
         exclude group: 'com.google.android', module: 'android'
+        exclude group: 'com.google.code.findbugs', module: 'jsr305'
         exclude group: 'com.google.guava', module: 'guava-jdk5'
+        exclude group: 'junit', module: 'junit'
+        exclude group: 'org.apache.httpcomponents', module: 'httpclient'
+        exclude group: 'com.google.http-client', module: 'google-http-client-jackson2'
     }
 
     // Easier HTTP requests, not necessarily needed
-    compile ('com.github.kevinsawicki:http-request:6.0') {
+    compile('com.github.kevinsawicki:http-request:6.0') {
         exclude group: 'junit', module: 'junit'
     }
 }
