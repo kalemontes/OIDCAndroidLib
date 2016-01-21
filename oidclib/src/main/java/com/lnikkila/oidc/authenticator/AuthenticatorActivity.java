@@ -4,6 +4,7 @@ import android.accounts.Account;
 import android.accounts.AccountAuthenticatorActivity;
 import android.accounts.AccountManager;
 import android.app.AlertDialog;
+import android.app.KeyguardManager;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
@@ -28,17 +29,18 @@ import android.widget.EditText;
 import android.widget.RelativeLayout;
 import android.widget.Spinner;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.google.api.client.auth.oauth2.TokenResponse;
 import com.google.api.client.auth.openidconnect.IdTokenResponse;
 import com.google.api.client.json.gson.GsonFactory;
-import com.lnikkila.oidc.AccountUtils;
+import com.lnikkila.oidc.OIDCAccountManager;
 import com.lnikkila.oidc.OIDCUtils;
 import com.lnikkila.oidc.R;
 import com.lnikkila.oidc.minsdkcompat.CompatUri;
+import com.lnikkila.oidc.security.UserNotAuthenticatedWrapperException;
 
 import java.io.IOException;
-import java.lang.ref.WeakReference;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
@@ -62,15 +64,18 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
 
     private final String TAG = getClass().getSimpleName();
 
-    public static final String KEY_PRESENT_OPTS_FORM    = "com.lnikkila.oidcsample.KEY_PRESENT_OPTS_FORM";
-    public static final String KEY_IS_NEW_ACCOUNT       = "com.lnikkila.oidcsample.KEY_IS_NEW_ACCOUNT";
-    public static final String KEY_ACCOUNT_OBJECT       = "com.lnikkila.oidcsample.KEY_ACCOUNT_OBJECT";
+    public static final int ASK_USER_ENCRYPT_PIN_REQUEST_CODE = 1;
+
+    public static final String KEY_PRESENT_OPTS_FORM    = "com.lnikkila.oidc.KEY_PRESENT_OPTS_FORM";
+    public static final String KEY_IS_NEW_ACCOUNT       = "com.lnikkila.oidc.KEY_IS_NEW_ACCOUNT";
+    public static final String KEY_ACCOUNT_NAME         = "com.lnikkila.oidc.KEY_ACCOUNT_NAME";
 
     protected String authorizationEnpoint;
     protected String tokenEndpoint;
     protected String userInfoEndpoint;
 
-    private AccountManager accountManager;
+    private OIDCAccountManager accountManager;
+    private KeyguardManager keyguardManager;
     private Account account;
     private boolean isNewAccount;
 
@@ -101,7 +106,8 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         tokenEndpoint = getString(R.string.op_tokenEndpoint);
         userInfoEndpoint = getString(R.string.op_userInfoEndpoint);
 
-        accountManager = AccountManager.get(this);
+        accountManager = new OIDCAccountManager(this);
+        keyguardManager = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
 
         Bundle extras = getIntent().getExtras();
 
@@ -110,7 +116,10 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
 
         // In case we're renewing authorisation, we also got an Account object that we're supposed
         // to work with.
-        account = extras.getParcelable(KEY_ACCOUNT_OBJECT);
+        String accountName = extras.getString(KEY_ACCOUNT_NAME);
+        if (accountName != null) {
+            account = accountManager.getAccountByName(accountName);
+        }
 
         // In case that the needed OIDC options are not set, present form to set them in order to create the authentication URL
         boolean needsOptionsForm = extras.getBoolean(KEY_PRESENT_OPTS_FORM, false);
@@ -164,6 +173,21 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
                 webView.setVisibility(View.VISIBLE);
                 String authUrl = getAuthenticationUrl();
                 webView.loadUrl(authUrl);
+            }
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            Log.d(TAG, "KeyguardSecure is not used for pre M devices");
+        } else {
+            if (accountManager.isKeyPinRequired() && !keyguardManager.isKeyguardSecure()) {
+                Toast.makeText(this,
+                        "Secure lock screen hasn't set up. Go to 'Settings -> Security -> Screenlock' to set up a lock screen",
+                        Toast.LENGTH_LONG).show();
             }
         }
     }
@@ -529,9 +553,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
                 Log.i(TAG, String.format("User declines to authorise the app : %s", errorDescription));
             }
             else {
-                showErrorDialog(
-                        new WeakReference<>(this),
-                        "Error code: %s\n\n%s", error, errorDescription);
+                showErrorDialog("Error code: %s\n\n%s", error, errorDescription);
             }
 
             return true;
@@ -571,9 +593,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
 
         @Override
         public void onReceivedError(WebView view, int errorCode, String description, String url) {
-            showErrorDialog(
-                    new WeakReference<>(AuthenticatorActivity.this),
-                    "Network error: got %s for %s.", description, url);
+            showErrorDialog("Network error: got %s for %s.", description, url);
         }
 
         @Override
@@ -600,9 +620,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
                 setResult(RESULT_OK, intent);
                 finish();
             } else {
-                showErrorDialog(
-                        new WeakReference<>(AuthenticatorActivity.this),
-                        "Could not get ID Token.");
+                showErrorDialog("Could not get ID Token.");
             }
         }
     }
@@ -651,7 +669,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
                 if (isNewAccount) {
                     createAccount(response);
                 } else {
-                    AccountUtils.saveTokens(accountManager, account, response);
+                    saveTokens(response);
                 }
             }
 
@@ -698,7 +716,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
                     if (isNewAccount) {
                         createAccount(response);
                     } else {
-                        AccountUtils.saveTokens(accountManager, account, response);
+                        saveTokens(response);
                     }
 
                     return true;
@@ -731,7 +749,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
                 if (isNewAccount) {
                     createAccount(response);
                 } else {
-                    AccountUtils.saveTokens(accountManager, account, response);
+                    saveTokens(response);
                 }
 
                 return true;
@@ -756,7 +774,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
                 if (isNewAccount) {
                     createAccount(response);
                 } else {
-                    AccountUtils.saveTokens(accountManager, account, response);
+                    saveTokens(response);
                 }
 
                 return true;
@@ -810,10 +828,10 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         }
 
         account = new Account(String.format("%s (%s)", accountName, accountId), accountType);
-        accountManager.addAccountExplicitly(account, null, null);
+        accountManager.getAccountManager().addAccountExplicitly(account, null, null);
 
         // Store the tokens in the account
-        AccountUtils.saveTokens(accountManager, account, response);
+        saveTokens(response);
 
         Log.d(TAG, "Account created.");
     }
@@ -825,44 +843,69 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         String accountName = getString(R.string.app_name);
 
         account = new Account(accountName, accountType);
-        accountManager.addAccountExplicitly(account, null, null);
+        accountManager.getAccountManager().addAccountExplicitly(account, null, null);
 
         Log.d(TAG, String.format("Saved tokens : (AT %1$s) (RT %2$s)", response.getAccessToken(), response.getRefreshToken()));
 
         // Store the tokens in the account
-        AccountUtils.saveTokens(accountManager, account, response);
+        saveTokens(response);
 
         Log.d(TAG, "Account created.");
     }
 
     //endregion
 
+
+    private void saveTokens(TokenResponse response) {
+        try {
+            accountManager.saveTokens(account, response);
+        } catch (UserNotAuthenticatedWrapperException e) {
+            showAuthenticationScreen(ASK_USER_ENCRYPT_PIN_REQUEST_CODE);
+        }
+    }
+
+    private void saveTokens(IdTokenResponse response) {
+        try {
+            accountManager.saveTokens(account, response);
+        } catch (UserNotAuthenticatedWrapperException e) {
+            showAuthenticationScreen(ASK_USER_ENCRYPT_PIN_REQUEST_CODE);
+        }
+    }
+
     /**
      * TODO: Improve error messages.
      *
-     * @param context the activity context (WeakReference to avoid leaks)
      * @param message Error message that can contain formatting placeholders.
      * @param args    Formatting arguments for the message, or null.
      */
-    private static void showErrorDialog(final WeakReference<AuthenticatorActivity> context, String message, String... args) {
-        if (context.get() != null) {
-            if (args != null) {
-                message = String.format(message, args);
-            }
+    private void showErrorDialog(String message, String... args) {
+        if (args != null) {
+            message = String.format(message, args);
+        }
 
-            new AlertDialog.Builder(context.get())
-                    .setTitle("Sorry, there was an error")
-                    .setMessage(message)
-                    .setCancelable(true)
-                    .setNeutralButton("Close", new DialogInterface.OnClickListener() {
-                        @Override
-                        public void onClick(DialogInterface dialogInterface, int i) {
-                            dialogInterface.dismiss();
-                            context.get().finish();
-                        }
-                    })
-                    .create()
-                    .show();
+        new AlertDialog.Builder(this)
+                .setTitle("Sorry, there was an error")
+                .setMessage(message)
+                .setCancelable(true)
+                .setNeutralButton("Close", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialogInterface, int i) {
+                        dialogInterface.dismiss();
+                        finish();
+                    }
+                })
+                .create()
+                .show();
+    }
+
+    private void showAuthenticationScreen(int requestCode) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            Log.e(TAG, "This should never happend for pre M devices");
+        } else {
+            Intent intent = keyguardManager.createConfirmDeviceCredentialIntent(null, null);
+            if (intent != null) {
+                startActivityForResult(intent, requestCode);
+            }
         }
     }
 
@@ -870,15 +913,14 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
      * Create an intent for showing the authorisation web page from an external app/service context.
      * This is usually used to request authorization when tokens expire.
      * @param context the Context where the intent is trigger from, like Activity, App, or Service
-     * @param account the account that we need authorization for
+     * @param accountName the account name that we need authorization for
      * @return an intent to open AuthenticatorActivity
      */
-    public static Intent createIntentForReAuthorization(Context context, Account account) {
+    public static Intent createIntentForReAuthorization(Context context, String accountName) {
         Intent intent = new Intent(context, AuthenticatorActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         intent.putExtra(AuthenticatorActivity.KEY_PRESENT_OPTS_FORM, false);
-        intent.putExtra(AuthenticatorActivity.KEY_ACCOUNT_OBJECT, account);
-
+        intent.putExtra(AuthenticatorActivity.KEY_ACCOUNT_NAME, accountName);
         return intent;
     }
 }

@@ -13,9 +13,10 @@ import android.util.Log;
 
 import com.google.api.client.auth.oauth2.TokenResponse;
 import com.google.api.client.auth.oauth2.TokenResponseException;
-import com.lnikkila.oidc.AccountUtils;
+import com.lnikkila.oidc.OIDCAccountManager;
 import com.lnikkila.oidc.OIDCUtils;
 import com.lnikkila.oidc.R;
+import com.lnikkila.oidc.security.UserNotAuthenticatedWrapperException;
 
 import java.io.IOException;
 
@@ -39,7 +40,7 @@ public class Authenticator extends AbstractAccountAuthenticator {
     private final String TAG = getClass().getSimpleName();
 
     protected final Context context;
-    protected final AccountManager accountManager;
+    protected final OIDCAccountManager accountManager;
 
     protected final String tokenEndpoint;
 
@@ -57,7 +58,7 @@ public class Authenticator extends AbstractAccountAuthenticator {
         super(context);
         this.context = context;
 
-        this.accountManager = AccountManager.get(context);
+        this.accountManager = new OIDCAccountManager(context);
 
         this.tokenEndpoint = this.context.getString(R.string.op_tokenEndpoint);
 
@@ -105,13 +106,13 @@ public class Authenticator extends AbstractAccountAuthenticator {
                 "authTokenType '%s'.", account.type, account.name, authTokenType));
 
         // Try to retrieve a stored token
-        String token = accountManager.peekAuthToken(account, authTokenType);
+        String token = accountManager.getAccountManager().peekAuthToken(account, authTokenType);
 
         if (TextUtils.isEmpty(token)) {
             // If we don't have one or the token has been invalidated, we need to check if we have
             // a refresh token
             Log.d(TAG, "Token empty, checking for refresh token.");
-            String refreshToken = accountManager.peekAuthToken(account, TOKEN_TYPE_REFRESH);
+            String refreshToken = accountManager.getAccountManager().peekAuthToken(account, TOKEN_TYPE_REFRESH);
 
             if (TextUtils.isEmpty(refreshToken)) {
                 // If we don't even have a refresh token, we need to launch an intent for the user
@@ -124,7 +125,7 @@ public class Authenticator extends AbstractAccountAuthenticator {
                 Intent intent = createIntentForAuthorization(response);
 
                 // Provide the account that we need re-authorised
-                intent.putExtra(AuthenticatorActivity.KEY_ACCOUNT_OBJECT, account);
+                intent.putExtra(AuthenticatorActivity.KEY_ACCOUNT_NAME, account.name);
 
                 result.putParcelable(AccountManager.KEY_INTENT, intent);
                 return result;
@@ -146,14 +147,16 @@ public class Authenticator extends AbstractAccountAuthenticator {
                     Intent intent = createIntentForAuthorization(response);
 
                     // Provide the account that we need re-authorised
-                    intent.putExtra(AuthenticatorActivity.KEY_ACCOUNT_OBJECT, account);
+                    intent.putExtra(AuthenticatorActivity.KEY_ACCOUNT_NAME, account.name);
 
                     result.putParcelable(AccountManager.KEY_INTENT, intent);
                     return result;
+                } catch (UserNotAuthenticatedWrapperException e) {
+                    //FIXME: we need to see how to handle this here because we can't do a start activity for result
                 }
 
                 // Now, let's return the token that was requested
-                token = accountManager.peekAuthToken(account, authTokenType);
+                token = accountManager.getAccountManager().peekAuthToken(account, authTokenType);
             }
         }
 
@@ -174,7 +177,7 @@ public class Authenticator extends AbstractAccountAuthenticator {
      * @param refreshToken the refresh token to be use
      * @throws TokenResponseException when refreshToken is invalid or expired
      */
-    protected void refreshTokens(Account account, String refreshToken) throws TokenResponseException {
+    protected void refreshTokens(Account account, String refreshToken) throws TokenResponseException, UserNotAuthenticatedWrapperException {
         try {
             if (checkOIDCClientConfiguration(clientId, clientSecret, redirectUrl, scopes, flowType)) {
                 Log.d(TAG, "The OIDC client options are correctly set.");
@@ -183,7 +186,7 @@ public class Authenticator extends AbstractAccountAuthenticator {
                         tokenEndpoint, clientId, clientSecret, scopes, refreshToken);
 
                 Log.d(TAG, "Got new tokens.");
-                AccountUtils.saveTokens(accountManager, account, tokenResponse);
+                accountManager.saveTokens(account, tokenResponse);
             }
             else {
                 // The OIDC client options are NOT set.

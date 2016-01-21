@@ -6,9 +6,9 @@ android {
 
     defaultConfig {
         minSdkVersion 9
-        versionCode 1
-        versionName "1.0"
         targetSdkVersion 23
+        versionCode 2
+        versionName "1.1"
     }
     buildTypes {
         release {
@@ -54,4 +54,7 @@ dependencies {
     compile('com.github.kevinsawicki:http-request:6.0') {
         exclude group: 'junit', module: 'junit'
     }
+
+    // Encryption for Pre Loli devices
+    compile 'com.madgag.spongycastle:core:1.54.0.0'
 }
