@@ -1,16 +1,16 @@
 package com.lnikkila.oidcsample;
 
 import android.accounts.Account;
-import android.accounts.AccountManager;
 import android.accounts.AccountManagerCallback;
-import android.content.Context;
+import android.accounts.AuthenticatorException;
+import android.accounts.OperationCanceledException;
 import android.os.Bundle;
 
 import com.github.kevinsawicki.http.HttpRequest;
 import com.google.gson.Gson;
-import com.lnikkila.oidc.AccountUtils;
+import com.lnikkila.oidc.OIDCAccountManager;
 import com.lnikkila.oidc.OIDCUtils;
-import com.lnikkila.oidc.authenticator.Authenticator;
+import com.lnikkila.oidc.security.UserNotAuthenticatedWrapperException;
 
 import java.io.IOException;
 import java.util.Map;
@@ -30,11 +30,11 @@ public class APIUtility {
     /**
      * Makes a GET request and parses the received JSON string as a Map.
      */
-    public static Map getJson(Context context, String url, Account account,
+    public static Map getJson(OIDCAccountManager accountManager, String url, Account account,
                               AccountManagerCallback<Bundle> callback)
-            throws IOException {
+            throws IOException, UserNotAuthenticatedWrapperException, AuthenticatorException, OperationCanceledException {
 
-        String jsonString = makeRequest(context, HttpRequest.METHOD_GET, url, account, callback);
+        String jsonString = makeRequest(accountManager, HttpRequest.METHOD_GET, url, account, callback);
         return new Gson().fromJson(jsonString, Map.class);
     }
 
@@ -44,19 +44,19 @@ public class APIUtility {
      * If the request doesn't execute successfully on the first try, the tokens will be refreshed
      * and the request will be retried. If the second try fails, an exception will be raised.
      */
-    public static String makeRequest(Context context, String method, String url, Account account,
+    public static String makeRequest(OIDCAccountManager accountManager, String method, String url, Account account,
                                      AccountManagerCallback<Bundle> callback)
-            throws IOException {
+            throws IOException, UserNotAuthenticatedWrapperException, AuthenticatorException, OperationCanceledException {
 
-        return makeRequest(context, method, url, account, true, callback);
+        return makeRequest(accountManager, method, url, account, true, callback);
     }
 
-    private static String makeRequest(final Context context, String method, String url, Account account,
+    private static String makeRequest(OIDCAccountManager accountManager, String method, String url, Account account,
                                       boolean doRetry, AccountManagerCallback<Bundle> callback)
-            throws IOException {
+            throws IOException, UserNotAuthenticatedWrapperException, AuthenticatorException, OperationCanceledException {
 
-        AccountManager accountManager = AccountManager.get(context);
-        String accessToken = AccountUtils.requestAccessToken(account, doRetry, callback, accountManager);
+
+        String accessToken = accountManager.getAccessToken(account, callback);
 
         // Prepare an API request using the accessToken
         HttpRequest request = new HttpRequest(url, method);
@@ -78,12 +78,9 @@ public class APIUtility {
             if (doRetry && (code == HTTP_UNAUTHORIZED || code == HTTP_FORBIDDEN ||
                     (code == HTTP_BAD_REQUEST && (requestContent.contains("invalid_grant") || requestContent.contains("Access Token not valid"))))) {
                 // We're being denied access on the first try, let's renew the token and retry
-                String accountType = context.getString(R.string.account_authenticator_type);
+                accountManager.invalidateAuthToken(accessToken);
 
-                accountManager.setAuthToken(account, Authenticator.TOKEN_TYPE_ID, null);
-                accountManager.invalidateAuthToken(accountType, accessToken);
-
-                return makeRequest(context, method, url, account, false, callback);
+                return makeRequest(accountManager, method, url, account, false, callback);
             } else {
                 // An unrecoverable error or the renewed token didn't work either
                 throw new IOException(request.code() + " " + request.message() + " " + requestContent);

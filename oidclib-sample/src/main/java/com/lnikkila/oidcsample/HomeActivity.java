@@ -1,9 +1,10 @@
 package com.lnikkila.oidcsample;
 
 import android.accounts.Account;
-import android.accounts.AccountManager;
 import android.accounts.AccountManagerCallback;
 import android.accounts.AccountManagerFuture;
+import android.accounts.AuthenticatorException;
+import android.accounts.OperationCanceledException;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -17,7 +18,8 @@ import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.ProgressBar;
 
-import com.lnikkila.oidc.authenticator.Authenticator;
+import com.lnikkila.oidc.OIDCAccountManager;
+import com.lnikkila.oidc.security.UserNotAuthenticatedWrapperException;
 
 import java.io.IOException;
 import java.util.Map;
@@ -42,7 +44,7 @@ public class HomeActivity extends Activity  {
     private Button requestButton;
 
     private ProgressBar progressBar;
-    private AccountManager accountManager;
+    private OIDCAccountManager accountManager;
     private Account availableAccounts[];
 
     private int selectedAccountIndex;
@@ -61,7 +63,7 @@ public class HomeActivity extends Activity  {
         progressBar = (ProgressBar) findViewById(R.id.progressBar);
         progressBar.setVisibility(View.INVISIBLE);
 
-        accountManager = AccountManager.get(this);
+        accountManager = new OIDCAccountManager(this);
     }
 
     @Override
@@ -84,8 +86,7 @@ public class HomeActivity extends Activity  {
 
     protected void refreshAvailableAccounts() {
         // Grab all our accounts
-        String accountType = getString(R.string.account_authenticator_type);
-        availableAccounts = accountManager.getAccountsByType(accountType);
+        availableAccounts = accountManager.getAccounts();
     }
 
     //endregion
@@ -98,33 +99,24 @@ public class HomeActivity extends Activity  {
     public void doLogin(final View view) {
 
         requestButton.setText(R.string.requestButton);
-
-        String accountType = getString(R.string.account_authenticator_type);
-
         switch (availableAccounts.length) {
             // No account has been created, let's create one now
             case 0:
-                accountManager.addAccount(accountType, Authenticator.TOKEN_TYPE_ID, null, null,
-                        this, new AccountManagerCallback<Bundle>() {
-                            @Override
-                            public void run(AccountManagerFuture<Bundle> futureManager) {
-                                // Unless the account creation was cancelled, try logging in again
-                                // after the account has been created.
-                                if (!futureManager.isCancelled()) {
-                                    refreshAvailableAccounts();
+                accountManager.createAccount(this, new AccountManagerCallback<Bundle>() {
+                    @Override
+                    public void run(AccountManagerFuture<Bundle> futureManager) {
+                        // Unless the account creation was cancelled, try logging in again
+                        // after the account has been created.
+                        if (!futureManager.isCancelled()) {
+                            refreshAvailableAccounts();
 
-                                    if (availableAccounts.length > 0) {
-                                        // if we have an user endpoint we try to get userinfo with the receive token
-                                        if (!TextUtils.isEmpty(userInfoEndpoint)) {
-                                            new LoginTask().execute(availableAccounts[0]);
-                                        }
-                                    } else {
-                                        Log.e(TAG, "Couldn't create a new account");
-                                    }
-
-                                }
+                            // if we have an user endpoint we try to get userinfo with the receive token
+                            if (!TextUtils.isEmpty(userInfoEndpoint)) {
+                                new LoginTask().execute(availableAccounts[0]);
                             }
-                        }, null);
+                        }
+                    }
+                });
                 break;
 
             // There's just one account, let's use that
@@ -188,11 +180,13 @@ public class HomeActivity extends Activity  {
             Account account = args[0];
 
             try {
-                return APIUtility.getJson(HomeActivity.this, userInfoEndpoint, account, null);
-            } catch (IOException e) {
-                e.printStackTrace();
-                return null;
+                return APIUtility.getJson(accountManager, userInfoEndpoint, account, null);
+            } catch (AuthenticatorException | OperationCanceledException |IOException e) {
+                e.printStackTrace(); //FIXME:
+            } catch (UserNotAuthenticatedWrapperException e) {
+                //FIXME: we gotta handle this somehow
             }
+            return null;
         }
 
         /**
@@ -228,11 +222,13 @@ public class HomeActivity extends Activity  {
             Account account = args[0];
 
             try {
-                return APIUtility.getJson(HomeActivity.this, protectedResUrl, account, null);
-            } catch (IOException e) {
+                return APIUtility.getJson(accountManager, protectedResUrl, account, null);
+            } catch (AuthenticatorException | OperationCanceledException |IOException e) {
                 e.printStackTrace();
-                return null;
+            } catch (UserNotAuthenticatedWrapperException e) {
+                //FIXME: we gotta handle this somehow
             }
+            return null;
         }
 
         /**
