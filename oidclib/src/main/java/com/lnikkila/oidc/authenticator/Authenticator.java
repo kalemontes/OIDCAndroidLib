@@ -71,6 +71,8 @@ public class Authenticator extends AbstractAccountAuthenticator {
         Log.d(TAG, "Authenticator created.");
     }
 
+    //region Methods implemented from AbstractAccountAuthenticator
+
     /**
      * Called when the user adds a new account through Android's system settings or when an app
      * explicitly calls this.
@@ -211,35 +213,9 @@ public class Authenticator extends AbstractAccountAuthenticator {
         }
     }
 
-    /**
-     * Create an intent for showing the authorisation web page.
-     * @param response response to send the result back to the AccountManager, will never be null
-     * @return an intent to open AuthenticatorActivity with AuthenticatorActivity.KEY_PRESENT_OPTS_FORM extra
-     * set to false if OIDC client correctly options are set (true otherwise).
-     */
-    protected Intent createIntentForAuthorization(AccountAuthenticatorResponse response) {
-        Intent intent = null;
+    //endregion
 
-        if (checkOIDCClientConfiguration(clientId, clientSecret, redirectUrl, scopes, flowType)) {
-            intent = new Intent(context, AuthenticatorActivity.class);
-            intent.putExtra(AccountManager.KEY_ACCOUNT_AUTHENTICATOR_RESPONSE, response);
-        }
-        else {
-            Log.e(TAG, "OIDC client options are missing or not correctly set");
-        }
-
-        return intent;
-    }
-
-    /**
-     * Checks if OIDC client settings are correctly set.
-     * @return true if all expected settings are set, false otherwise.
-     */
-    protected boolean checkOIDCClientConfiguration(String clientId, String clientSecret, String redirectUrl, String[] scopes, String flowType) {
-        return !TextUtils.isEmpty(clientId) && !TextUtils.isEmpty(clientSecret) &&
-                !TextUtils.isEmpty(redirectUrl) && scopes.length > 0 &&
-                !TextUtils.isEmpty(flowType) && OIDCUtils.isSupportedFlow(flowType);
-    }
+    //region Methods NOT implemented from AbstractAccountAuthenticator
 
     @Override
     public String getAuthTokenLabel(String authTokenType) {
@@ -268,6 +244,38 @@ public class Authenticator extends AbstractAccountAuthenticator {
                                     String authTokenType, Bundle options)
                                     throws NetworkErrorException {
         return null;
+    }
+
+    //endregion
+
+    /**
+     * Create an intent for showing the authorisation web page.
+     * @param response response to send the result back to the AccountManager, will never be null
+     * @return an intent to open AuthenticatorActivity with AuthenticatorActivity.KEY_PRESENT_OPTS_FORM extra
+     * set to false if OIDC client correctly options are set (true otherwise).
+     */
+    protected Intent createIntentForAuthorization(AccountAuthenticatorResponse response) {
+        Intent intent = null;
+
+        if (checkOIDCClientConfiguration(clientId, clientSecret, redirectUrl, scopes, flowType)) {
+            intent = new Intent(context, AuthenticatorActivity.class);
+            intent.putExtra(AccountManager.KEY_ACCOUNT_AUTHENTICATOR_RESPONSE, response);
+        }
+        else {
+            Log.e(TAG, "OIDC client options are missing or not correctly set");
+        }
+
+        return intent;
+    }
+
+    /**
+     * Checks if OIDC client settings are correctly set.
+     * @return true if all expected settings are set, false otherwise.
+     */
+    protected boolean checkOIDCClientConfiguration(String clientId, String clientSecret, String redirectUrl, String[] scopes, String flowType) {
+        return !TextUtils.isEmpty(clientId) && !TextUtils.isEmpty(clientSecret) &&
+                !TextUtils.isEmpty(redirectUrl) && scopes.length > 0 &&
+                !TextUtils.isEmpty(flowType) && OIDCUtils.isSupportedFlow(flowType);
     }
 
 }

@@ -923,4 +923,20 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         intent.putExtra(AuthenticatorActivity.KEY_ACCOUNT_NAME, accountName);
         return intent;
     }
+
+    /**
+     * Create an intent for showing the authorisation web page from an external app/service context.
+     * This is usually used to request authorization when creating a new account.
+     * @param context the Context where the intent is trigger from, like Activity, App, or Service
+     * @param accountName the account name to be created
+     * @return an intent to open AuthenticatorActivity
+     */
+    public static Intent createIntentForAccountCreation(Context context, String accountName) {
+        Intent intent = new Intent(context, AuthenticatorActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        intent.putExtra(AuthenticatorActivity.KEY_PRESENT_OPTS_FORM, false);
+        intent.putExtra(AuthenticatorActivity.KEY_ACCOUNT_NAME, accountName);
+        intent.putExtra(AuthenticatorActivity.KEY_IS_NEW_ACCOUNT, true);
+        return intent;
+    }
 }

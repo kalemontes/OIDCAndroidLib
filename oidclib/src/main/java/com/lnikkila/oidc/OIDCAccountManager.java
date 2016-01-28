@@ -69,6 +69,11 @@ public class OIDCAccountManager {
         this.manager.addAccount(getAccountType(), Authenticator.TOKEN_TYPE_ID, null, null, activity, callback, null);
     }
 
+    public boolean removeAccount(String accountName) {
+        Account account = getAccountByName(accountName);
+        return removeAccount(account);
+    }
+
     public boolean removeAccount(Account account) {
         boolean removed = false;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1){
