@@ -273,9 +273,55 @@ public class Authenticator extends AbstractAccountAuthenticator {
      * @return true if all expected settings are set, false otherwise.
      */
     protected boolean checkOIDCClientConfiguration(String clientId, String clientSecret, String redirectUrl, String[] scopes, String flowType) {
-        return !TextUtils.isEmpty(clientId) && !TextUtils.isEmpty(clientSecret) &&
-                !TextUtils.isEmpty(redirectUrl) && scopes.length > 0 &&
-                !TextUtils.isEmpty(flowType) && OIDCUtils.isSupportedFlow(flowType);
+        boolean isConfigOk = false;
+
+        if (!TextUtils.isEmpty(flowType) && OIDCUtils.isSupportedFlow(flowType)) {
+            OIDCUtils.Flows supportedFlow = OIDCUtils.Flows.valueOf(flowType);
+
+            // RFC6749 https://tools.ietf.org/html/rfc6749#section-2.3  says that client_secret are OPTIONAL
+            // and if not set it usually means that the client is public and does not require to authenticate
+            // with the authorization server. When client_secret is set we will consider that client is
+            // confidential and as for now we will only support HTTP Basic authentication to authenticate
+            //  with the authorization server (others like public/private key pair, etc. are not yet supported).
+            if (TextUtils.isEmpty(clientSecret)) {
+                Log.d(TAG, "Undefined client_secret, OIDC client is public");
+            } else {
+                Log.d(TAG, "OIDC client is confidential and will be using HTTP Basic authentication");
+            }
+
+            // RFC6749 https://tools.ietf.org/html/rfc6749#section-3.3 says that scopes are OPTIONAL
+            // and if omited by client it means to use pre-defined default value or the authorization server fails
+            if (scopes.length == 0) {
+                Log.w(TAG, "Undefined scopes, OIDC client will use authorization server pre-defined default values");
+            }
+
+            switch (supportedFlow) {
+                case Code:
+                case Implicit:
+                case Hybrid :
+                    isConfigOk =
+                            !TextUtils.isEmpty(clientId) &&
+                            // RFC6749 https://tools.ietf.org/html/rfc6749#section-4.1.1 says this is OPTIONAL
+                            // but we need this to know when the WebView should to stop following redirects
+                            !TextUtils.isEmpty(redirectUrl);
+                    break;
+                case Password:
+                    // RFC6749 https://tools.ietf.org/html/rfc6749#section-4.3.2 we don't need to check anything
+                    // here because resource owner username/password will be set by a form later on. We know that
+                    // this is not the way that it should be (username/password should be already be set on OIDC
+                    // client and be check if they are set here). Also this flow should NOT be use by an
+                    // Android App, this flow was added for completeness.
+                    Log.w(TAG, "Please be sure you know what you are doing when using the 'password' flow");
+                    isConfigOk = true;
+                    break;
+                default:
+                    Log.wtf(TAG, "An new/unknown flow type was added but it's configuration checks where not implemented");
+                    break;
+            }
+        } else {
+            Log.e(TAG, "Undefined or unsupported flow type, check your OIDC client configuration file 'res/values/oidc_clientconfig.xml'");
+        }
+        return isConfigOk;
     }
 
 }
