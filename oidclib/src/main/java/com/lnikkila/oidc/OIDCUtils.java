@@ -252,13 +252,13 @@ public class OIDCUtils {
      */
     public static TokenResponse requestTokensWithCodeGrant(String tokenServerUrl, String redirectUrl,
                                                            String clientId, String clientSecret,
-                                                           String authCode, boolean isOIDC) throws IOException {
-        return requestTokensWithCodeGrant(tokenServerUrl, redirectUrl, clientId, clientSecret, authCode, isOIDC, null);
+                                                           String authCode, boolean useOAuth2Only) throws IOException {
+        return requestTokensWithCodeGrant(tokenServerUrl, redirectUrl, clientId, clientSecret, authCode, useOAuth2Only, null);
     }
 
     public static TokenResponse requestTokensWithCodeGrant(String tokenServerUrl, String redirectUrl,
                                                            String clientId, String clientSecret,
-                                                           String authCode, boolean isOIDC,
+                                                           String authCode, boolean useOAuth2Only,
                                                            Map<String,String> extras) throws IOException {
 
         AuthorizationCodeTokenRequest request = new AuthorizationCodeTokenRequest(
@@ -284,18 +284,7 @@ public class OIDCUtils {
         }
 
         // Working with OIDC
-        if (isOIDC) {
-            Log.d("OIDCUtils", "tokens request OIDC sent");
-            IdTokenResponse response = IdTokenResponse.execute(request);
-            String idToken = response.getIdToken();
-
-            if (isValidIdToken(clientId, idToken)) {
-                return response;
-            } else {
-                throw new IOException("Invalid ID token returned.");
-            }
-        }
-        else {
+        if (useOAuth2Only) {
             Log.d("OIDCUtils", "tokens request OAuth2 sent");
             TokenResponse tokenResponse = request.executeUnparsed().parseAs(TokenResponse.class);
             String accessToken = tokenResponse.getAccessToken();
@@ -306,6 +295,17 @@ public class OIDCUtils {
             }
             else {
                 throw new IOException("Invalid Access Token returned.");
+            }
+        }
+        else {
+            Log.d("OIDCUtils", "tokens request OIDC sent");
+            IdTokenResponse response = IdTokenResponse.execute(request);
+            String idToken = response.getIdToken();
+
+            if (isValidIdToken(clientId, idToken)) {
+                return response;
+            } else {
+                throw new IOException("Invalid ID token returned.");
             }
         }
     }

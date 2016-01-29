@@ -5,6 +5,10 @@
  (with added manual obfuscation), DexGuard or something else.
 -->
 <resources>
+    <!-- Set to true when using an OAuth2 limited provider instead of an OIDC provider. The lib will
+    adapt it's requests to match oauth2 protocol only instead of OIDC (no idToken) -->
+    <bool name="oidc_oauth2only">false</bool>
+
     <!-- OIDC client information you received from your OIDC provider -->
     <string name="oidc_clientId">foobar</string>
     <string name="oidc_clientSecret">xyzzy</string>

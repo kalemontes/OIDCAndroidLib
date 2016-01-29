@@ -41,7 +41,6 @@ import com.lnikkila.oidc.minsdkcompat.CompatUri;
 import com.lnikkila.oidc.security.UserNotAuthenticatedWrapperException;
 
 import java.io.IOException;
-import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
 
@@ -79,6 +78,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
     private Account account;
     private boolean isNewAccount;
 
+    protected boolean useOAuth2Only;
     protected String clientId;
     protected String clientSecret;
     protected String redirectUrl;
@@ -152,7 +152,8 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
             Log.d(TAG, "Initiated activity for completing OIDC client options.");
         }
         else {
-            // Fetch the OIDC client options from the bundle extras
+            // Fetch the OIDC client options
+            useOAuth2Only = this.getResources().getBoolean(R.bool.oidc_oauth2only);
             clientId = this.getString(R.string.oidc_clientId);
             clientSecret = this.getString(R.string.oidc_clientSecret);
             redirectUrl = this.getString(R.string.oidc_redirectUrl).toLowerCase();
@@ -167,8 +168,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
                 setupPasswordGrantForm();
 
                 Log.d(TAG, "Initiated activity for password grant form.");
-            }
-            else {
+            } else {
                 clientFormLayout.setVisibility(View.GONE);
                 webView.setVisibility(View.VISIBLE);
                 String authUrl = getAuthenticationUrl();
@@ -206,25 +206,29 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
 
     protected String getAuthenticationUrl() {
         // Generate the authentication URL using the oidc options set on the bundle
-        String authUrl = OIDCUtils.newAuthenticationUrl(authorizationEnpoint, flowType, clientId,
-                redirectUrl, scopes);
+        String authUrl = OIDCUtils.newAuthenticationUrl(
+                authorizationEnpoint,
+                flowType,
+                clientId,
+                redirectUrl,
+                scopes);
 
         Log.d(TAG, String.format("Initiated activity for getting authorisation with URL '%s'.", authUrl));
         return authUrl;
     }
 
     @Nullable
-    protected IdTokenResponse requestAccessTokenWithAuthCode(String authCode) {
-        IdTokenResponse response = null;
+    protected TokenResponse requestAccessTokenWithAuthCode(String authCode) {
+        TokenResponse response = null;
 
         try {
-            response = (IdTokenResponse) OIDCUtils.requestTokensWithCodeGrant(
+            response = OIDCUtils.requestTokensWithCodeGrant(
                     tokenEndpoint,
                     redirectUrl,
                     clientId,
                     clientSecret,
                     authCode,
-                    true);
+                    useOAuth2Only);
         } catch (IOException e) {
             Log.e(TAG, "Could not get response.", e);
         }
@@ -707,18 +711,15 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
             else {
                 Log.i(TAG, "Requesting access_token with AuthCode : " + authCode);
 
-                IdTokenResponse response = requestAccessTokenWithAuthCode(authCode);
-
+                TokenResponse response = requestAccessTokenWithAuthCode(authCode);
                 if (response == null) {
                     return false;
-                }
-                else {
+                } else {
                     if (isNewAccount) {
                         createAccount(response);
                     } else {
                         saveTokens(response);
                     }
-
                     return true;
                 }
             }
@@ -740,18 +741,15 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
 
             Log.i(TAG, "Requesting access_token with AuthCode : " + authCode);
 
-            IdTokenResponse response = requestAccessTokenWithAuthCode(authCode);
-
+            TokenResponse response = requestAccessTokenWithAuthCode(authCode);
             if (response == null) {
                 return false;
-            }
-            else {
+            } else {
                 if (isNewAccount) {
                     createAccount(response);
                 } else {
                     saveTokens(response);
                 }
-
                 return true;
             }
         }
@@ -785,62 +783,65 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
     //endregion
 
     //region Account Management
-    private void createAccount(IdTokenResponse response) {
-        Log.d(TAG, "Creating account.");
 
-        String accountType = getString(R.string.account_authenticator_type);
+    /**
+     * AccountManager expects that each account has a unique name. If a new account has the same name
+     * as a previously created one, it will overwrite the older account.
+     *
+     * Unfortunately the OIDC spec cannot guarantee[1] that any user information is unique, save for
+     * the user ID (i.e. the ID Token subject) which, depending on the authentication server, is hardly
+     * human-readable. This makes choosing between multiple accounts difficult.
+     *
+     * We'll resort to naming each account 'app_name : claim'. Usually a claim to use here could be 'name'
+     * or 'email' if that user information is unique.
+     *
+     * [1]: http://openid.net/specs/openid-connect-basic-1_0.html#ClaimStability
+     *
+     * The 'app_name' will be as a fallback if the other information isn't available for some reason
+     * (for instance no contact with UserInfo Endpoint, or bad claim extraction).
+     *
+     * @param response the TokenResponse receive from the authentication server.
+     * @param claimAsPartOfAccountName claim to be use as part the account name (ex: email, name, given_name).
+     *                                 If null it will use sub claim as part of the accout name.
+     * @return the account name to be use when creating an account on the AccountManager
+     */
+    private String getAccountName(TokenResponse response, String claimAsPartOfAccountName) {
+        String accountName = null;
+        if (response instanceof IdTokenResponse) {
+            try {
+                // Asserts the identity of the user, called subject in OpenID (sub)
+                String accountSubject = ((IdTokenResponse)response).parseIdToken().getPayload().getSubject();
 
-        // AccountManager expects that each account has a unique username. If a new account has the
-        // same username as a previously created one, it will overwrite the older account.
-        //
-        // Unfortunately the OIDC spec cannot guarantee[1] that any user information is unique,
-        // save for the user ID (i.e. the ID Token subject) which is hardly human-readable. This
-        // makes choosing between multiple accounts difficult.
-        //
-        // We'll resort to naming each account `given_name (ID)`. This is a neat solution
-        // if the user ID is short enough.
-        //
-        // [1]: http://openid.net/specs/openid-connect-basic-1_0.html#ClaimStability
-
-        // Use the app name as a fallback if the other information isn't available for some reason.
-        String accountName = getString(R.string.app_name);
-        String accountId = null;
-
-        try {
-            accountId = response.parseIdToken().getPayload().getSubject();
-        } catch (IOException e) {
-            Log.e(TAG, "Could not get ID Token subject.");
-            e.printStackTrace();
+                if ((accountSubject != null && !TextUtils.isEmpty(accountSubject)) || claimAsPartOfAccountName == null){
+                    accountName = String.format("%1$s : %2$s", getString(R.string.app_name), accountSubject);
+                } else {
+                    // If for a reason we can't get the subject or want to use a other claim instead,
+                    // we will try to get the `claimAsAccountName` using the UserInfo Endpoint
+                    Map userInfo = OIDCUtils.getUserInfo(userInfoEndpoint, response.getAccessToken());
+                    if (userInfo.containsKey(claimAsPartOfAccountName)) {
+                        String userName = (String) userInfo.get(claimAsPartOfAccountName);
+                        accountName = String.format("%1$s : %2$s", getString(R.string.app_name), userName);
+                    }
+                }
+            } catch (IOException e) {
+                Log.e(TAG, "Could not get needed account info using the given TokenResponse.", e);
+            }
         }
 
-        // Get the user information so we can grab the `given_name`
-        Map userInfo = Collections.emptyMap();
-
-        try {
-            userInfo = OIDCUtils.getUserInfo(userInfoEndpoint, response.getAccessToken());
-        } catch (IOException e) {
-            Log.e(TAG, "Could not get UserInfo.");
-            e.printStackTrace();
+        // Fallback to app's name if the other information isn't available
+        if(accountName == null || TextUtils.isEmpty(accountName)) {
+            accountName = getString(R.string.app_name);
         }
 
-        if (userInfo.containsKey("given_name")) {
-            accountName = (String) userInfo.get("given_name");
-        }
-
-        account = new Account(String.format("%s (%s)", accountName, accountId), accountType);
-        accountManager.getAccountManager().addAccountExplicitly(account, null, null);
-
-        // Store the tokens in the account
-        saveTokens(response);
-
-        Log.d(TAG, "Account created.");
+        return accountName.trim();
     }
 
     private void createAccount(TokenResponse response) {
         Log.d(TAG, "Creating account.");
 
         String accountType = getString(R.string.account_authenticator_type);
-        String accountName = getString(R.string.app_name);
+        String claimAsAccountName = "name"; //FIXME : this be some kind of oidc client parameter. What to do... what to do...
+        String accountName = getAccountName(response, claimAsAccountName);
 
         account = new Account(accountName, accountType);
         accountManager.getAccountManager().addAccountExplicitly(account, null, null);
@@ -853,8 +854,6 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         Log.d(TAG, "Account created.");
     }
 
-    //endregion
-
 
     private void saveTokens(TokenResponse response) {
         try {
@@ -864,13 +863,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         }
     }
 
-    private void saveTokens(IdTokenResponse response) {
-        try {
-            accountManager.saveTokens(account, response);
-        } catch (UserNotAuthenticatedWrapperException e) {
-            showAuthenticationScreen(ASK_USER_ENCRYPT_PIN_REQUEST_CODE);
-        }
-    }
+    //endregion
 
     /**
      * TODO: Improve error messages.

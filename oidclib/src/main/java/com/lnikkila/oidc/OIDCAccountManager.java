@@ -146,24 +146,18 @@ public class OIDCAccountManager {
         return this.secureStorage.retrieveStringData(this.manager, account, tokenType, callback);
     }
 
-    public void saveTokens(Account account, IdTokenResponse tokenResponse) throws UserNotAuthenticatedWrapperException {
-        saveToken(account, Authenticator.TOKEN_TYPE_ID, tokenResponse.getIdToken());
-        saveToken(account, Authenticator.TOKEN_TYPE_REFRESH, tokenResponse.getRefreshToken());
-        saveToken(account, Authenticator.TOKEN_TYPE_ACCESS, tokenResponse.getAccessToken());
-    }
-
-    public void saveTokens(String accountName, IdTokenResponse tokenResponse) throws UserNotAuthenticatedWrapperException {
-        saveToken(accountName, Authenticator.TOKEN_TYPE_ID, tokenResponse.getIdToken());
-        saveToken(accountName, Authenticator.TOKEN_TYPE_REFRESH, tokenResponse.getRefreshToken());
-        saveToken(accountName, Authenticator.TOKEN_TYPE_ACCESS, tokenResponse.getAccessToken());
-    }
-
     public void saveTokens(Account account, TokenResponse tokenResponse) throws UserNotAuthenticatedWrapperException {
+        if (tokenResponse instanceof IdTokenResponse) {
+            saveToken(account, Authenticator.TOKEN_TYPE_ID, ((IdTokenResponse) tokenResponse).getIdToken());
+        }
         saveToken(account, Authenticator.TOKEN_TYPE_ACCESS, tokenResponse.getAccessToken());
         saveToken(account, Authenticator.TOKEN_TYPE_REFRESH, tokenResponse.getRefreshToken());
     }
 
     public void saveTokens(String accountName, TokenResponse tokenResponse) throws UserNotAuthenticatedWrapperException {
+        if (tokenResponse instanceof IdTokenResponse) {
+            saveToken(accountName, Authenticator.TOKEN_TYPE_ID, ((IdTokenResponse)tokenResponse).getIdToken());
+        }
         saveToken(accountName, Authenticator.TOKEN_TYPE_ACCESS, tokenResponse.getAccessToken());
         saveToken(accountName, Authenticator.TOKEN_TYPE_REFRESH, tokenResponse.getRefreshToken());
     }
