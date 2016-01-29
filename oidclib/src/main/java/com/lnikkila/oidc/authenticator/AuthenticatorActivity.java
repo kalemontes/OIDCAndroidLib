@@ -87,6 +87,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
     protected String redirectUrl;
     protected String[] scopes;
     protected OIDCUtils.Flows flowType;
+    protected String secureState;
 
     /*package*/ RelativeLayout parentLayout;
     /*package*/ WebView webView;
@@ -208,13 +209,17 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
     //region Requests to the Identity Provider
 
     protected String getAuthenticationUrl() {
-        // Generate the authentication URL using the oidc options set on the bundle
+        //Generates a new state to help prevent cross-site scripting attacks
+        secureState = OIDCUtils.generateStateToken(getString(R.string.op_usualName));
+
+        // Generate the authentication URL using the OIDC client options
         String authUrl = OIDCUtils.newAuthenticationUrl(
                 authorizationEnpoint,
                 flowType,
                 clientId,
                 redirectUrl,
-                scopes);
+                scopes,
+                secureState);
 
         Log.d(TAG, String.format("Initiated activity for getting authorisation with URL '%s'.", authUrl));
         return authUrl;
@@ -498,18 +503,21 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
             case Code:
             default: {
                 // The URL will contain a `code` parameter when the user has been authenticated
-                if (parameterNames.contains("code")) {
-                    String authToken = redirectUri.getQueryParameter("code");
+                if (parameterNames.contains("state")) {
+                    String state = redirectUri.getQueryParameter("state");
+                    if (parameterNames.contains("code")) {
+                        String authToken = redirectUri.getQueryParameter("code");
 
-                    // Request the ID token
-                    CodeFlowTask task = new CodeFlowTask();
-                    task.execute(authToken);
-                } else {
-                    Log.e(TAG, String.format(
-                            "redirectUriString '%1$s' doesn't contain code param; can't extract authCode",
-                            redirectUriString));
+                        // Request the ID token
+                        CodeFlowTask task = new CodeFlowTask();
+                        task.execute(authToken, state);
+                    } else {
+                        Log.e(TAG, String.format(
+                                "redirectUriString '%1$s' doesn't contain code param; can't extract authCode",
+                                redirectUriString));
+                    }
+                    break;
                 }
-                break;
             }
         }
     }
@@ -664,31 +672,33 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
             Long expiresIn = (!TextUtils.isEmpty(expiresInString)) ? Long.decode(expiresInString) : null;
 
             String scope = tokenExtrationUrl.getQueryParameter("scope");
-            //TODO: Should check the state to to handle cross-site attacks
-            //String state = tokenExtrationUrl.getQueryParameter("state");
+            String returnedState = tokenExtrationUrl.getQueryParameter("state");
 
-            if (TextUtils.isEmpty(accessToken) || TextUtils.isEmpty(idToken) || TextUtils.isEmpty(tokenType) || expiresIn == null) {
+            if(secureState.equalsIgnoreCase(returnedState)) {
+                if (TextUtils.isEmpty(accessToken) || TextUtils.isEmpty(idToken) || TextUtils.isEmpty(tokenType) || expiresIn == null) {
+                    return false;
+                } else {
+                    Log.i(TAG, "AuthToken : " + accessToken);
+
+                    IdTokenResponse response = new IdTokenResponse();
+                    response.setAccessToken(accessToken);
+                    response.setIdToken(idToken);
+                    response.setTokenType(tokenType);
+                    response.setExpiresInSeconds(expiresIn);
+                    response.setScope(scope);
+                    response.setFactory(new GsonFactory());
+
+                    if (isNewAccount) {
+                        createAccount(response);
+                    } else {
+                        saveTokens(response);
+                    }
+                    return true;
+                }
+            } else {
+                Log.e(TAG, "Local and returned states don't match");
                 return false;
             }
-            else {
-                Log.i(TAG, "AuthToken : " + accessToken);
-
-                IdTokenResponse response = new IdTokenResponse();
-                response.setAccessToken(accessToken);
-                response.setIdToken(idToken);
-                response.setTokenType(tokenType);
-                response.setExpiresInSeconds(expiresIn);
-                response.setScope(scope);
-                response.setFactory(new GsonFactory());
-
-                if (isNewAccount) {
-                    createAccount(response);
-                } else {
-                    saveTokens(response);
-                }
-            }
-
-            return true;
         }
     }
 
@@ -712,27 +722,29 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
             Uri tokenExtrationUrl = new Uri.Builder().encodedQuery(fragmentPart).build();
             String idToken = tokenExtrationUrl.getQueryParameter("id_token");
             String authCode = tokenExtrationUrl.getQueryParameter("code");
+            String returnedState = tokenExtrationUrl.getQueryParameter("state");
 
-            //TODO: Should check the state to to handle cross-site attacks
-            //String state = tokenExtrationUrl.getQueryParameter("state");
-
-            if (TextUtils.isEmpty(idToken) || TextUtils.isEmpty(authCode)) {
-                return false;
-            }
-            else {
-                Log.i(TAG, "Requesting access_token with AuthCode : " + authCode);
-
-                TokenResponse response = requestAccessTokenWithAuthCode(authCode);
-                if (response == null) {
+            if(secureState.equalsIgnoreCase(returnedState)) {
+                if (TextUtils.isEmpty(idToken) || TextUtils.isEmpty(authCode)) {
                     return false;
                 } else {
-                    if (isNewAccount) {
-                        createAccount(response);
+                    Log.i(TAG, "Requesting access_token with AuthCode : " + authCode);
+
+                    TokenResponse response = requestAccessTokenWithAuthCode(authCode);
+                    if (response == null) {
+                        return false;
                     } else {
-                        saveTokens(response);
+                        if (isNewAccount) {
+                            createAccount(response);
+                        } else {
+                            saveTokens(response);
+                        }
+                        return true;
                     }
-                    return true;
                 }
+            } else {
+                Log.e(TAG, "Local and returned states don't match");
+                return false;
             }
         }
     }
@@ -749,19 +761,25 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         @Override
         protected Boolean doInBackground(String... args) {
             String authCode = args[0];
+            String returnedState = args[1];
 
-            Log.i(TAG, "Requesting access_token with AuthCode : " + authCode);
+            if(secureState.equalsIgnoreCase(returnedState)) {
+                Log.i(TAG, "Requesting access_token with AuthCode : " + authCode);
 
-            TokenResponse response = requestAccessTokenWithAuthCode(authCode);
-            if (response == null) {
-                return false;
-            } else {
-                if (isNewAccount) {
-                    createAccount(response);
+                TokenResponse response = requestAccessTokenWithAuthCode(authCode);
+                if (response == null) {
+                    return false;
                 } else {
-                    saveTokens(response);
+                    if (isNewAccount) {
+                        createAccount(response);
+                    } else {
+                        saveTokens(response);
+                    }
+                    return true;
                 }
-                return true;
+            } else {
+                Log.e(TAG, "Local and returned states don't match");
+                return false;
             }
         }
     }

@@ -21,6 +21,7 @@ import com.google.api.client.json.gson.GsonFactory;
 import com.google.gson.Gson;
 
 import java.io.IOException;
+import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -68,7 +69,8 @@ public class OIDCUtils {
      * @see <a href="http://openid.net/specs/openid-connect-core-1_0.html#ImplicitFlowAuth">Implicit Flow</a>
      */
     public static String implicitFlowAuthenticationUrl(String authorizationServerUrl, String clientId,
-                                                       String redirectUrl, String[] scopes, Map<String, String> extras) {
+                                                       String redirectUrl, String[] scopes, String state,
+                                                       Map<String, String> extras) {
 
         //TODO: see what the following statement implies :
         // "While OAuth 2.0 also defines the token Response Type value for the Implicit Flow,
@@ -83,9 +85,8 @@ public class OIDCUtils {
                 responsesList)
                 .setRedirectUri(redirectUrl)
                 .setScopes(scopesList)
-                .setState("xyz")
-                .set("nonce", "");
-        //TODO: nonce is mandatory we should try to generate one
+                .setState(state)
+                .set("nonce", ""); //TODO: nonce is mandatory we should try to generate one
 
         // This are extra query parameters that can be specific to an OP. For instance for OpenAm
         // we can define 'realm' that defines to which sub realm the request is going to.
@@ -120,7 +121,8 @@ public class OIDCUtils {
      * @see <a href="http://openid.net/specs/openid-connect-core-1_0.html#HybridFlowAuth">Hybrid Flow</a>
      */
     public static String hybridFlowAuthenticationUrl(String authorizationServerUrl, String clientId,
-                                                     String redirectUrl, String[] scopes, Map<String, String> extras) {
+                                                     String redirectUrl, String[] scopes, String state,
+                                                     Map<String, String> extras) {
 
         // The response type "code" is the only mandatory response type on hybrid flow, it must be
         // coupled with other response types to form one of the following values : "code id_token",
@@ -136,9 +138,8 @@ public class OIDCUtils {
         AuthorizationRequestUrl request = new AuthorizationRequestUrl(authorizationServerUrl, clientId, responsesList)
                 .setRedirectUri(redirectUrl)
                 .setScopes(scopesList)
-                .setState("xyz")
-                .set("nonce", "");
-        //TODO: nonce is mandatory we should try to generate one
+                .setState(state)
+                .set("nonce", ""); //TODO: nonce is mandatory we should try to generate one
 
         // This are extra query parameters that can be specific to an OP. For instance for OpenAm
         // we can define 'realm' that defines to which sub realm the request is going to.
@@ -174,16 +175,16 @@ public class OIDCUtils {
      * @see <a href="http://openid.net/specs/openid-connect-core-1_0.html#CodeFlowAuth">Code Flow</a>
      */
     public static String codeFlowAuthenticationUrl(String authorizationServerUrl, String clientId,
-                                                   String redirectUrl, String[] scopes, Map<String,String> extras) {
+                                                   String redirectUrl, String[] scopes, String state,
+                                                   Map<String,String> extras) {
 
         List<String> scopesList = Arrays.asList(scopes);
 
         AuthorizationCodeRequestUrl request = new AuthorizationCodeRequestUrl(authorizationServerUrl, clientId)
                 .setRedirectUri(redirectUrl)
                 .setScopes(scopesList)
-                .setState("xyz")
-                .set("nonce", "");
-        //TODO: nonce is mandatory we should try to generate one
+                .setState(state)
+                .set("nonce", "");//TODO: nonce is mandatory we should try to generate one
 
         // This are extra query parameters that can be specific to an OP. For instance for OpenAm
         // we can define 'realm' that defines to which sub realm the request is going to.
@@ -213,27 +214,27 @@ public class OIDCUtils {
 
 
     public static String newAuthenticationUrl(String authorizationServerUrl, OIDCUtils.Flows flowType,
-                                              String clientId, String redirectUrl, String[] scopes) {
+                                              String clientId, String redirectUrl, String[] scopes, String state) {
 
-        return newAuthenticationUrl(authorizationServerUrl, flowType, clientId, redirectUrl, scopes, null);
+        return newAuthenticationUrl(authorizationServerUrl, flowType, clientId, redirectUrl, scopes, state, null);
     }
 
     public static String newAuthenticationUrl(String authorizationServerUrl, OIDCUtils.Flows flowType,
                                               String clientId, String redirectUrl, String[] scopes,
-                                              Map<String, String> extras) {
+                                              String state, Map<String, String> extras) {
         String request;
         switch (flowType) {
             case Implicit: {
-                request = implicitFlowAuthenticationUrl(authorizationServerUrl, clientId, redirectUrl, scopes, extras);
+                request = implicitFlowAuthenticationUrl(authorizationServerUrl, clientId, redirectUrl, scopes, state, extras);
                 break;
             }
             case Hybrid: {
-                request = hybridFlowAuthenticationUrl(authorizationServerUrl, clientId, redirectUrl, scopes, extras);
+                request = hybridFlowAuthenticationUrl(authorizationServerUrl, clientId, redirectUrl, scopes, state, extras);
                 break;
             }
             case Code:
             default: {
-                request = codeFlowAuthenticationUrl(authorizationServerUrl, clientId, redirectUrl, scopes, extras);
+                request = codeFlowAuthenticationUrl(authorizationServerUrl, clientId, redirectUrl, scopes, state, extras);
                 break;
             }
         }
@@ -267,7 +268,7 @@ public class OIDCUtils {
                 new GenericUrl(tokenServerUrl),
                 authCode
         );
-        request.set("redirect_uri", redirectUrl);
+        request.setRedirectUri(redirectUrl);
 
         // This are extra query parameters that can be specific to an OP. For instance for OpenAm
         // we can define 'realm' that defines to which sub realm the request is going to.
@@ -510,4 +511,14 @@ public class OIDCUtils {
         }
     }
 
+    /**
+     * Generates a secure state token
+     * @param opName
+     * @return
+     */
+    public static String generateStateToken(String opName){
+        SecureRandom sr = new SecureRandom();
+        String cleanOpName = TextUtils.replace(opName, new String[]{"\\W"}, new String[]{""}).toString();
+        return  cleanOpName+sr.nextInt();
+    }
 }
