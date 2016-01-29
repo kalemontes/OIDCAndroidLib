@@ -3,6 +3,7 @@ package com.lnikkila.oidc.authenticator;
 import android.accounts.Account;
 import android.accounts.AccountAuthenticatorActivity;
 import android.accounts.AccountManager;
+import android.annotation.TargetApi;
 import android.app.AlertDialog;
 import android.app.KeyguardManager;
 import android.content.Context;
@@ -21,6 +22,8 @@ import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.ArrayAdapter;
@@ -136,7 +139,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         //webView = (WebView) findViewById(R.id.WebView);
 
         //TODO: Enable this if your authorisation page requires JavaScript
-        webView.getSettings().setJavaScriptEnabled(true);
+        //webView.getSettings().setJavaScriptEnabled(true);
         webView.setWebViewClient(new AuthorizationWebViewClient());
 
         // Initialise the OIDC client definition form
@@ -303,6 +306,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         }
     }
 
+    @SuppressWarnings("ConstantConditions")
     private void setupFormFloatingLabel() {
         clientIdInputLayout = (TextInputLayout) findViewById(R.id.clientIdInputLayout);
         clientIdInputLayout.getEditText().addTextChangedListener(new OIDCOptionsTextWatcher(clientIdInputLayout));
@@ -595,9 +599,16 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
             return handleUri(url) || super.shouldOverrideUrlLoading(view, url);
         }
 
+        @SuppressWarnings("deprecation")
         @Override
         public void onReceivedError(WebView view, int errorCode, String description, String url) {
             showErrorDialog("Network error: got %s for %s.", description, url);
+        }
+
+        @TargetApi(Build.VERSION_CODES.M)
+        @Override
+        public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+            showErrorDialog("Network error: got %s for %s.", error.getDescription().toString(), request.getUrl().toString());
         }
 
         @Override
