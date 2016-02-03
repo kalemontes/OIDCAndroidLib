@@ -57,9 +57,15 @@ public class SensitiveDataPostApi23 extends SensitiveDataUtils {
     //endregion
 
     private KeyStore keyStore;
+    private Cipher encryptCipher;
 
     public SensitiveDataPostApi23(Context context) {
         super(context);
+        try {
+            encryptCipher = Cipher.getInstance(String.format("%1$s/%2$s/%3$s", CIPHER_ALGO, CIPHER_BLOCKS, CIPHER_PADDING));
+        } catch (NoSuchAlgorithmException | NoSuchPaddingException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private String getKeyAlias() {
@@ -92,11 +98,17 @@ public class SensitiveDataPostApi23 extends SensitiveDataUtils {
 
     protected void createAndSaveSecretKey() {
         try {
-            generateKey();
             keyStore = KeyStore.getInstance(KEYSTORE_TYPE);
             keyStore.load(null);
+
+            KeyStore.SecretKeyEntry entry = (KeyStore.SecretKeyEntry)keyStore.getEntry(getKeyAlias(), null);
+            if (entry == null) {
+                generateKey();
+            }
         } catch (KeyStoreException | CertificateException | IOException | NoSuchAlgorithmException e) {
             Log.e(TAG, "Couldn't get a reference to the AndroidKeyStore", e);
+        } catch (UnrecoverableEntryException e) {
+            Log.e(TAG, "Couldn't extract key from the AndroidKeyStore", e);
         }
     }
 
@@ -111,7 +123,7 @@ public class SensitiveDataPostApi23 extends SensitiveDataUtils {
                     .setKeySize(CIPHER_KEY_LENGHT)
                     .setBlockModes(CIPHER_BLOCKS)
                     .setEncryptionPaddings(CIPHER_PADDING)
-                    .setRandomizedEncryptionRequired(true)
+                    .setRandomizedEncryptionRequired(false) //FIXME: set to true because we should be using IND-CPA but this means that a IV has to be store per token (less generic than i though)
                     .setUserAuthenticationRequired(isKeyPinRequired())
                     .setUserAuthenticationValidityDurationSeconds(getKeyPinDuration())
                     .build();
@@ -125,25 +137,42 @@ public class SensitiveDataPostApi23 extends SensitiveDataUtils {
         return key;
     }
 
+    protected void initCipher(boolean forEncryption) throws UnrecoverableEntryException, NoSuchAlgorithmException, KeyStoreException, NoSuchPaddingException, InvalidKeyException, InvalidAlgorithmParameterException {
+        KeyStore.SecretKeyEntry entry = (KeyStore.SecretKeyEntry)keyStore.getEntry(getKeyAlias(), null);
+        SecretKey key = entry.getSecretKey();
+        SharedPreferences sharedPreferences = context.get().getSharedPreferences(IV_STORAGE_FILE_NAME, Activity.MODE_PRIVATE);
+        String base64EncryptionIv = sharedPreferences.getString(IV_PARAM_KEY, null);
+
+        if(forEncryption) {
+            if (base64EncryptionIv == null) {
+                encryptCipher.init(Cipher.ENCRYPT_MODE, key);
+
+                byte[] encryptionIV = encryptCipher.getIV();
+                base64EncryptionIv = Base64.encodeToString(encryptionIV, Base64.DEFAULT);
+
+                SharedPreferences.Editor editor = sharedPreferences.edit();
+                editor.putString(IV_PARAM_KEY, base64EncryptionIv);
+                editor.apply();
+            } else {
+                byte[] encryptionIv = Base64.decode(base64EncryptionIv, Base64.DEFAULT);
+                encryptCipher.init(Cipher.ENCRYPT_MODE, key, new IvParameterSpec(encryptionIv)); //FIXME: this ain't good, and we are re-using the same IV (security guidelines say we shouldn't)
+            }
+        } else {
+            byte[] encryptionIv = Base64.decode(base64EncryptionIv, Base64.DEFAULT);
+
+            encryptCipher.init(Cipher.DECRYPT_MODE, key, new IvParameterSpec(encryptionIv));
+        }
+    }
+
     protected byte[] encrypt(byte[] data) throws UserNotAuthenticatedWrapperException {
         byte[] encrypted;
         try {
-            KeyStore.SecretKeyEntry entry = (KeyStore.SecretKeyEntry)keyStore.getEntry(getKeyAlias(), null);
-            SecretKey key = entry.getSecretKey();
-
-            Cipher encryptCipher = Cipher.getInstance(String.format("%1$s/%2$s/%3$s", CIPHER_ALGO, CIPHER_BLOCKS, CIPHER_PADDING));
-            encryptCipher.init(Cipher.ENCRYPT_MODE, key);
-
-            byte[] encryptionIV = encryptCipher.getIV();
-            SharedPreferences.Editor editor = context.get().getSharedPreferences(IV_STORAGE_FILE_NAME, Activity.MODE_PRIVATE).edit();
-            editor.putString(IV_PARAM_KEY, Base64.encodeToString(encryptionIV, Base64.DEFAULT));
-            editor.apply();
-
+            initCipher(true);
             encrypted = encryptCipher.doFinal(data);
         } catch (UserNotAuthenticatedException e) {
             throw new UserNotAuthenticatedWrapperException(e);
         } catch (NoSuchAlgorithmException | NoSuchPaddingException | IllegalBlockSizeException |
-                InvalidKeyException | BadPaddingException | UnrecoverableEntryException | KeyStoreException e) {
+                InvalidKeyException | BadPaddingException | UnrecoverableEntryException | KeyStoreException | InvalidAlgorithmParameterException e) {
             throw new RuntimeException(e);
         }
         return encrypted;
@@ -152,18 +181,9 @@ public class SensitiveDataPostApi23 extends SensitiveDataUtils {
     protected byte[] decrypt(byte[] data) throws UserNotAuthenticatedWrapperException {
         byte[] decrypted;
         try {
-            KeyStore.SecretKeyEntry entry = (KeyStore.SecretKeyEntry)keyStore.getEntry(getKeyAlias(), null);
-            SecretKey key = entry.getSecretKey();
-
-            SharedPreferences sharedPreferences = context.get().getSharedPreferences(IV_STORAGE_FILE_NAME, Activity.MODE_PRIVATE);
-            String base64EncryptionIv = sharedPreferences.getString(IV_PARAM_KEY, null);
-            byte[] encryptionIv = Base64.decode(base64EncryptionIv, Base64.DEFAULT);
-
-            Cipher decryptCipher = Cipher.getInstance(String.format("%1$s/%2$s/%3$s", CIPHER_ALGO, CIPHER_BLOCKS, CIPHER_PADDING));
-            decryptCipher.init(Cipher.DECRYPT_MODE, key, new IvParameterSpec(encryptionIv));
-
-            decrypted = decryptCipher.doFinal(data);
-        }catch (UserNotAuthenticatedException e) {
+            initCipher(false);
+            decrypted = encryptCipher.doFinal(data);
+        } catch (UserNotAuthenticatedException e) {
             throw new UserNotAuthenticatedWrapperException(e);
         } catch (NoSuchAlgorithmException | NoSuchPaddingException | IllegalBlockSizeException | InvalidKeyException |
                 BadPaddingException | UnrecoverableEntryException | KeyStoreException | InvalidAlgorithmParameterException e) {

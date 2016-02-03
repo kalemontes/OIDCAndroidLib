@@ -61,7 +61,7 @@ public class AccountSensitiveDataStorageUtils {
                     callback,
                     null);
         }
-        String encryptedToken = futureManager.getResult().getString(tokenType);
+        String encryptedToken = futureManager.getResult().getString(AccountManager.KEY_AUTHTOKEN);
         if (encryptedToken != null) {
             data = dataEncUtils.decrypt(encryptedToken);
         }
