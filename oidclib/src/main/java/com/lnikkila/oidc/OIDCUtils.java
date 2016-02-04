@@ -68,9 +68,8 @@ public class OIDCUtils {
      * it doesn't support refresh tokens.
      * @see <a href="http://openid.net/specs/openid-connect-core-1_0.html#ImplicitFlowAuth">Implicit Flow</a>
      */
-    public static String implicitFlowAuthenticationUrl(String authorizationServerUrl, String clientId,
-                                                       String redirectUrl, String[] scopes, String state,
-                                                       Map<String, String> extras) {
+    private static AuthorizationRequestUrl implicitFlowAuthenticationUrl(String authorizationServerUrl, String clientId,
+                                                       String redirectUrl, String[] scopes, String state) {
 
         //TODO: see what the following statement implies :
         // "While OAuth 2.0 also defines the token Response Type value for the Implicit Flow,
@@ -80,38 +79,15 @@ public class OIDCUtils {
         List<String> scopesList = Arrays.asList(scopes);
         List<String> responsesList = Arrays.asList(responsesTypes);
 
-        //REQUIRED  OIDC request params
+        //noinspection UnnecessaryLocalVariable
         AuthorizationRequestUrl request = new AuthorizationRequestUrl(authorizationServerUrl, clientId,
                 responsesList)
                 .setRedirectUri(redirectUrl)
                 .setScopes(scopesList)
                 .setState(state)
-                .set("nonce", ""); //TODO: nonce is mandatory we should try to generate one
+                .set("nonce", ""); //TODO: nonce is optional, needs to include per-session state and be unguessable to attackers. We should try to generate one.
 
-        // This are extra query parameters that can be specific to an OP. For instance for OpenAm
-        // we can define 'realm' that defines to which sub realm the request is going to.
-        if (extras != null) {
-            for (Map.Entry<String, String> queryParam : extras.entrySet()) {
-                request.set(queryParam.getKey(), queryParam.getValue());
-            }
-        }
-
-        //OPTIONAL OIDC request params
-        if (scopesList.contains("offline_access")) {
-            // If the list of scopes includes the special `offline_access` scope that enables issuing
-            // of Refresh Tokens, we need to ask for consent by including this parameter.
-            request.set("prompt", "consent");
-        } else {
-            // Tell the server to ask for login details again. This ensures that in case of multiple
-            // accounts, the user won't accidentally authorise the wrong one.
-            request.set("prompt", "login");
-        }
-
-        // An optional request parameter that asks the server to provide a touch-enabled interface.
-        // Who knows, maybe the server is nice enough to make some changes.
-        request.set("display", "touch");
-
-        return request.build();
+        return request;
     }
 
     /**
@@ -120,9 +96,8 @@ public class OIDCUtils {
      * others are returned from the Token Endpoint.
      * @see <a href="http://openid.net/specs/openid-connect-core-1_0.html#HybridFlowAuth">Hybrid Flow</a>
      */
-    public static String hybridFlowAuthenticationUrl(String authorizationServerUrl, String clientId,
-                                                     String redirectUrl, String[] scopes, String state,
-                                                     Map<String, String> extras) {
+    private static AuthorizationRequestUrl hybridFlowAuthenticationUrl(String authorizationServerUrl, String clientId,
+                                                     String redirectUrl, String[] scopes, String state) {
 
         // The response type "code" is the only mandatory response type on hybrid flow, it must be
         // coupled with other response types to form one of the following values : "code id_token",
@@ -134,37 +109,14 @@ public class OIDCUtils {
         List<String> scopesList = Arrays.asList(scopes);
         List<String> responsesList = Arrays.asList(responsesTypes);
 
-        //REQUIRED  OIDC request params
+        //noinspection UnnecessaryLocalVariable
         AuthorizationRequestUrl request = new AuthorizationRequestUrl(authorizationServerUrl, clientId, responsesList)
                 .setRedirectUri(redirectUrl)
                 .setScopes(scopesList)
                 .setState(state)
-                .set("nonce", ""); //TODO: nonce is mandatory we should try to generate one
+                .set("nonce", ""); //TODO: nonce is optional, needs to include per-session state and be unguessable to attackers. We should try to generate one.
 
-        // This are extra query parameters that can be specific to an OP. For instance for OpenAm
-        // we can define 'realm' that defines to which sub realm the request is going to.
-        if (extras != null) {
-            for (Map.Entry<String, String> queryParam : extras.entrySet()) {
-                request.set(queryParam.getKey(), queryParam.getValue());
-            }
-        }
-
-        //OPTIONAL OIDC request params
-        if (scopesList.contains("offline_access")) {
-            // If the list of scopes includes the special `offline_access` scope that enables issuing
-            // of Refresh Tokens, we need to ask for consent by including this parameter.
-            request.set("prompt", "consent");
-        } else {
-            // Tell the server to ask for login details again. This ensures that in case of multiple
-            // accounts, the user won't accidentally authorise the wrong one.
-            request.set("prompt", "login");
-        }
-
-        // An optional request parameter that asks the server to provide a touch-enabled interface.
-        // Who knows, maybe the server is nice enough to make some changes.
-        request.set("display", "touch");
-
-        return request.build();
+        return request;
     }
 
     /**
@@ -174,71 +126,51 @@ public class OIDCUtils {
      * for an Access Token.
      * @see <a href="http://openid.net/specs/openid-connect-core-1_0.html#CodeFlowAuth">Code Flow</a>
      */
-    public static String codeFlowAuthenticationUrl(String authorizationServerUrl, String clientId,
-                                                   String redirectUrl, String[] scopes, String state,
-                                                   Map<String,String> extras) {
+    private static AuthorizationRequestUrl codeFlowAuthenticationUrl(String authorizationServerUrl, String clientId,
+                                                   String redirectUrl, String[] scopes, String state) {
 
         List<String> scopesList = Arrays.asList(scopes);
 
+        //noinspection UnnecessaryLocalVariable
         AuthorizationCodeRequestUrl request = new AuthorizationCodeRequestUrl(authorizationServerUrl, clientId)
                 .setRedirectUri(redirectUrl)
                 .setScopes(scopesList)
                 .setState(state)
-                .set("nonce", "");//TODO: nonce is mandatory we should try to generate one
+                .set("nonce", ""); //TODO: nonce is optional, needs to include per-session state and be unguessable to attackers. We should try to generate one.
 
-        // This are extra query parameters that can be specific to an OP. For instance for OpenAm
-        // we can define 'realm' that defines to which sub realm the request is going to.
+        return request;
+    }
+
+    public static String newAuthenticationUrl(String authorizationServerUrl, OIDCUtils.Flows flowType,
+                                              String clientId, String redirectUrl, String[] scopes,
+                                              String state, Map<String, String> extras) {
+        AuthorizationRequestUrl request;
+        switch (flowType) {
+            case Implicit: {
+                request = implicitFlowAuthenticationUrl(authorizationServerUrl, clientId, redirectUrl, scopes, state);
+                break;
+            }
+            case Hybrid: {
+                request = hybridFlowAuthenticationUrl(authorizationServerUrl, clientId, redirectUrl, scopes, state);
+                break;
+            }
+            case Code:
+            default: {
+                request = codeFlowAuthenticationUrl(authorizationServerUrl, clientId, redirectUrl, scopes, state);
+                break;
+            }
+        }
+
+        // This are extra query parameters that can be specific to an OP. For instance prompt -> consent
+        // tells the Authorization Server that it SHOULD prompt the End-User for consent before returning
+        // information to the Client.
         if (extras != null) {
             for (Map.Entry<String, String> queryParam : extras.entrySet()) {
                 request.set(queryParam.getKey(), queryParam.getValue());
             }
         }
 
-        //OPTIONAL OIDC request params
-        if (scopesList.contains("offline_access")) {
-            // If the list of scopes includes the special `offline_access` scope that enables issuing
-            // of Refresh Tokens, we need to ask for consent by including this parameter.
-            request.set("prompt", "consent");
-        } else {
-            // Tell the server to ask for login details again. This ensures that in case of multiple
-            // accounts, the user won't accidentally authorise the wrong one.
-            request.set("prompt", "login");
-        }
-
-        // An optional request parameter that asks the server to provide a touch-enabled interface.
-        // Who knows, maybe the server is nice enough to make some changes.
-        request.set("display", "touch");
-
         return request.build();
-    }
-
-
-    public static String newAuthenticationUrl(String authorizationServerUrl, OIDCUtils.Flows flowType,
-                                              String clientId, String redirectUrl, String[] scopes, String state) {
-
-        return newAuthenticationUrl(authorizationServerUrl, flowType, clientId, redirectUrl, scopes, state, null);
-    }
-
-    public static String newAuthenticationUrl(String authorizationServerUrl, OIDCUtils.Flows flowType,
-                                              String clientId, String redirectUrl, String[] scopes,
-                                              String state, Map<String, String> extras) {
-        String request;
-        switch (flowType) {
-            case Implicit: {
-                request = implicitFlowAuthenticationUrl(authorizationServerUrl, clientId, redirectUrl, scopes, state, extras);
-                break;
-            }
-            case Hybrid: {
-                request = hybridFlowAuthenticationUrl(authorizationServerUrl, clientId, redirectUrl, scopes, state, extras);
-                break;
-            }
-            case Code:
-            default: {
-                request = codeFlowAuthenticationUrl(authorizationServerUrl, clientId, redirectUrl, scopes, state, extras);
-                break;
-            }
-        }
-        return request;
     }
 
     /**
@@ -436,6 +368,7 @@ public class OIDCUtils {
     /**
      * Verifies an ID Token.
      * TODO: Look into verifying the token issuer as well?
+     * TODO: Look into verifying the token nonce as well?
      */
     public static boolean isValidIdToken(String clientId, String tokenString) throws IOException {
 
@@ -513,12 +446,14 @@ public class OIDCUtils {
 
     /**
      * Generates a secure state token
-     * @param opName
-     * @return
+     * @param opHint the OpenIdConnect Provider name or any other identifier that gives an idea of the
+     *               provider you are dealing with (i.e Google, Facebook, ...).
+     *               This will be use as part of the state token. Can be empty but not null.
+     * @return a state token.
      */
-    public static String generateStateToken(String opName){
+    public static String generateStateToken(@NonNull String opHint){
         SecureRandom sr = new SecureRandom();
-        String cleanOpName = TextUtils.replace(opName, new String[]{"\\W"}, new String[]{""}).toString();
+        String cleanOpName = TextUtils.replace(opHint, new String[]{"\\W"}, new String[]{""}).toString();
         return  cleanOpName+sr.nextInt();
     }
 }

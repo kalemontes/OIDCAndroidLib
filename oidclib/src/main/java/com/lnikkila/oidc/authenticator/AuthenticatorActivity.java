@@ -44,6 +44,7 @@ import com.lnikkila.oidc.minsdkcompat.CompatUri;
 import com.lnikkila.oidc.security.UserNotAuthenticatedWrapperException;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -212,6 +213,8 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         //Generates a new state to help prevent cross-site scripting attacks
         secureState = OIDCUtils.generateStateToken(getString(R.string.op_usualName));
 
+        HashMap<String, String> extraParams = parseStringArray(R.array.oidc_authextras);
+
         // Generate the authentication URL using the OIDC client options
         String authUrl = OIDCUtils.newAuthenticationUrl(
                 authorizationEnpoint,
@@ -219,7 +222,8 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
                 clientId,
                 redirectUrl,
                 scopes,
-                secureState);
+                secureState,
+                extraParams);
 
         Log.d(TAG, String.format("Initiated activity for getting authorisation with URL '%s'.", authUrl));
         return authUrl;
@@ -960,5 +964,15 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         intent.putExtra(AuthenticatorActivity.KEY_ACCOUNT_NAME, accountName);
         intent.putExtra(AuthenticatorActivity.KEY_IS_NEW_ACCOUNT, true);
         return intent;
+    }
+
+    public HashMap<String, String> parseStringArray(int stringArrayResourceId) {
+        String[] stringArray = getResources().getStringArray(stringArrayResourceId);
+        HashMap<String, String> outputArray = new HashMap<>(stringArray.length);
+        for (String entry : stringArray) {
+            String[] splitResult = entry.split("\\|", 2);
+            outputArray.put(splitResult[0], splitResult[1]);
+        }
+        return outputArray;
     }
 }
