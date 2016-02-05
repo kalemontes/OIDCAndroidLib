@@ -98,21 +98,44 @@ public class OIDCAccountManager {
         return keyPinRequired;
     }
 
-    public void invalidateAccountAuthTokens(String accountName) {
-        if(accountName != null) {
+    public void invalidateAllAccountTokens(Account account) {
+        if(account != null) {
             try {
-                String idToken = getIdToken(accountName, null);
-                String accessToken = getAccessToken(accountName, null);
-                this.manager.invalidateAuthToken(getAccountType(), idToken);
-                this.manager.invalidateAuthToken(getAccountType(), accessToken);
+                String idToken = getIdToken(account.name, null);
+                String accessToken = getAccessToken(account.name, null);
+                String refreshToken = getRefreshToken(account.name, null);
+                this.secureStorage.invalidateStringData(this.manager, account, idToken);
+                this.secureStorage.invalidateStringData(this.manager, account, accessToken);
+                this.secureStorage.invalidateStringData(this.manager, account, refreshToken);
             } catch (AuthenticatorException | UserNotAuthenticatedWrapperException | OperationCanceledException | IOException e) {
-                Log.w(TAG, String.format("Could not invalidate account %1$s tokens", accountName), e);
+                Log.w(TAG, String.format("Could not invalidate account %1$s tokens", account.name), e);
             }
         }
     }
 
-    public void invalidateAuthToken(String authToken) {
-        this.manager.invalidateAuthToken(getAccountType(), authToken);
+    public void invalidateAuthTokens(Account account) {
+        if(account != null) {
+            try {
+                String idToken = getIdToken(account.name, null);
+                String accessToken = getAccessToken(account.name, null);
+                this.secureStorage.invalidateStringData(this.manager, account, idToken);
+                this.secureStorage.invalidateStringData(this.manager, account, accessToken);
+            } catch (AuthenticatorException | UserNotAuthenticatedWrapperException | OperationCanceledException | IOException e) {
+                Log.w(TAG, String.format("Could not invalidate account %1$s tokens", account.name), e);
+            }
+        }
+    }
+
+
+    public void invalidateAccessToken(Account account) {
+        if(account != null) {
+            try {
+                String accessToken = getAccessToken(account, null);
+                this.secureStorage.invalidateStringData(this.manager, account, accessToken);
+            } catch (AuthenticatorException | UserNotAuthenticatedWrapperException | OperationCanceledException | IOException e) {
+                Log.w(TAG, String.format("Could not invalidate account %1$s AT", account.name), e);
+            }
+        }
     }
 
     public String getIdToken(String accountName, AccountManagerCallback<Bundle> callback)

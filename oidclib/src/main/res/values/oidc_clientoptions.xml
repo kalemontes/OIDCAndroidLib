@@ -29,7 +29,7 @@
     user is successfully authenticated. See http://developer.android.com/reference/android/security/keystore/KeyGenParameterSpec.Builder.html#setUserAuthenticationValidityDurationSeconds(int)
     for more info. -->
     <integer name="oidc_encryptKeyPinDuration">0</integer>
-    
+
     <!-- Tells the WebView to enable JavaScript execution. Using setJavaScriptEnabled can introduce XSS
     vulnerabilities into you application, review carefully. More info see WebSettings#setJavaScriptEnabled(bool) -->
     <bool name="webview_allow_js">false</bool>
