@@ -33,20 +33,4 @@
     is not suppose to be an oidc flow.
     For more info see http://openid.net/specs/openid-connect-core-1_0.html#Authentication -->
     <string name="oidc_flowType">Code</string>
-
-    <!-- The name use to store the encryption key store on the Android Keystore when using post M
-     devices. For pre M devices there is no Keystore so the key is store on the private app storage
-     on the device (less secure ofc). -->
-    <string name="oidc_encryptKeyAlias">oidcEncryptionKey</string>
-
-    <!-- Sets whether this key is authorized to be used only if the user has been authenticated. See
-      http://developer.android.com/reference/android/security/keystore/KeyGenParameterSpec.Builder.html#setUserAuthenticationRequired(boolean)
-      for more info.-->
-    <bool name="oidc_encryptKeyAskPin">true</bool>
-
-    <!-- Sets the duration of time (seconds) for which this key is authorized to be used after the
-    user is successfully authenticated. See
-    http://developer.android.com/reference/android/security/keystore/KeyGenParameterSpec.Builder.html#setUserAuthenticationValidityDurationSeconds(int)
-    for more info. -->
-    <integer name="oidc_encryptKeyPinDuration">300</integer>
 </resources>
