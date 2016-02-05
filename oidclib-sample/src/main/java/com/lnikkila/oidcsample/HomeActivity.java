@@ -19,6 +19,7 @@ import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.ProgressBar;
+import android.widget.Toast;
 
 import com.lnikkila.oidc.OIDCAccountManager;
 import com.lnikkila.oidc.security.UserNotAuthenticatedWrapperException;
@@ -45,6 +46,7 @@ public class HomeActivity extends Activity  {
 
     private Button loginButton;
     private Button requestButton;
+    private Button logoutButton;
 
     private ProgressBar progressBar;
     private OIDCAccountManager accountManager;
@@ -63,6 +65,7 @@ public class HomeActivity extends Activity  {
 
         loginButton = (Button) findViewById(R.id.loginButton);
         requestButton = (Button) findViewById(R.id.requestButton);
+        logoutButton = (Button) findViewById(R.id.logoutButton);
         progressBar = (ProgressBar) findViewById(R.id.progressBar);
         progressBar.setVisibility(View.INVISIBLE);
 
@@ -77,9 +80,11 @@ public class HomeActivity extends Activity  {
 
         if (availableAccounts.length > 0) {
             requestButton.setVisibility(View.VISIBLE);
+            logoutButton.setVisibility(View.VISIBLE);
         } else {
             requestButton.setVisibility(View.INVISIBLE);
             requestButton.setText(R.string.requestButton);
+            logoutButton.setVisibility(View.INVISIBLE);
         }
     }
 
@@ -87,7 +92,7 @@ public class HomeActivity extends Activity  {
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
         if (resultCode == RESULT_OK) {
             if (requestCode == RENEW_REFRESH_TOKEN) {
-                new LoginTask().execute(availableAccounts[0]);
+                new LoginTask().execute(availableAccounts[selectedAccountIndex]);
             }
         }
     }
@@ -169,6 +174,10 @@ public class HomeActivity extends Activity  {
 
     public void doRequest(View view) {
         new ProtectedResTask().execute(availableAccounts[selectedAccountIndex]);
+    }
+
+    public void doLogout(View view) {
+        new LogoutTask(false).execute(availableAccounts[selectedAccountIndex]);
     }
 
     //endregion
@@ -290,6 +299,59 @@ public class HomeActivity extends Activity  {
             } else {
                 requestButton.setText(result.toString());
             }
+        }
+    }
+
+    private class LogoutTask extends AsyncTask<Account, Void, Boolean> {
+
+        private boolean requestServerLogout;
+
+        public LogoutTask(boolean requestServerLogout){
+            this.requestServerLogout = requestServerLogout;
+        }
+
+        @Override
+        protected void onPreExecute() {
+            progressBar.setVisibility(View.VISIBLE);
+        }
+
+        @Override
+        protected Boolean doInBackground(Account... args) {
+            Account account = args[0];
+            return !requestServerLogout || requestServerLogout(account);
+        }
+
+        /**
+         * Processes the API's response.
+         */
+        @Override
+        protected void onPostExecute(Boolean result) {
+            progressBar.setVisibility(View.INVISIBLE);
+
+            if (result) {
+                boolean removed = accountManager.removeAccount(availableAccounts[0]);
+                if (removed) {
+                    loginButton.setText(R.string.loginButtonText);
+                    requestButton.setVisibility(View.INVISIBLE);
+                    logoutButton.setVisibility(View.INVISIBLE);
+                    refreshAvailableAccounts();
+
+                    Toast.makeText(HomeActivity.this,
+                            "Session closed",
+                            Toast.LENGTH_SHORT).show();
+                }
+                else {
+                    //TODO: show error message "Couldn't remove account"
+                }
+            } else {
+                //TODO: show error message "Couldn't logout"
+            }
+        }
+
+        private boolean requestServerLogout(Account account) {
+            //TODO: make a request to the OP's revoke endpoint to invalidate the current tokens
+            //See https://github.com/kalemontes/OIDCAndroidLib/issues/5 discution
+            return false;
         }
     }
 
