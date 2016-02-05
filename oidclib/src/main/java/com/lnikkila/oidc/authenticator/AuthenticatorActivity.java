@@ -140,8 +140,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         //instead of this :
         //webView = (WebView) findViewById(R.id.WebView);
 
-        //TODO: Enable this if your authorisation page requires JavaScript
-        //webView.getSettings().setJavaScriptEnabled(true);
+        webView.getSettings().setJavaScriptEnabled(getResources().getBoolean(R.bool.webview_allow_js));
         webView.setWebViewClient(new AuthorizationWebViewClient());
 
         // Initialise the OIDC client definition form
