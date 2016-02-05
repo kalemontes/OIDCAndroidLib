@@ -22,7 +22,7 @@
         </activity>
         <activity
             android:name="com.lnikkila.oidc.authenticator.AuthenticatorActivity"
-            android:theme="@android:style/Theme.Holo.NoActionBar" >
+            android:theme="@style/AppBaseTheme" >
         </activity>
 
         <service android:name="com.lnikkila.oidc.authenticator.AuthenticatorService">
