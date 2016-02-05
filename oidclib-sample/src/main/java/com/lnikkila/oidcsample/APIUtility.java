@@ -78,7 +78,7 @@ public class APIUtility {
             if (doRetry && (code == HTTP_UNAUTHORIZED || code == HTTP_FORBIDDEN ||
                     (code == HTTP_BAD_REQUEST && (requestContent.contains("invalid_grant") || requestContent.contains("Access Token not valid"))))) {
                 // We're being denied access on the first try, let's renew the token and retry
-                accountManager.invalidateAuthToken(accessToken);
+                accountManager.invalidateAuthTokens(account);
 
                 return makeRequest(accountManager, method, url, account, false, callback);
             } else {

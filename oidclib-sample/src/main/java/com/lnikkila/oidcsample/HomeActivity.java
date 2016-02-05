@@ -1,6 +1,7 @@
 package com.lnikkila.oidcsample;
 
 import android.accounts.Account;
+import android.accounts.AccountManager;
 import android.accounts.AccountManagerCallback;
 import android.accounts.AccountManagerFuture;
 import android.accounts.AuthenticatorException;
@@ -9,6 +10,7 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
+import android.content.Intent;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.text.TextUtils;
@@ -34,6 +36,7 @@ import java.util.Map;
 public class HomeActivity extends Activity  {
 
     private static final String TAG = HomeActivity.class.getSimpleName();
+    private static final int RENEW_REFRESH_TOKEN = 2016;
 
     //TODO: set your protected resource url
     private static final String protectedResUrl = "https://www.example.com/res/my_res";
@@ -77,6 +80,15 @@ public class HomeActivity extends Activity  {
         } else {
             requestButton.setVisibility(View.INVISIBLE);
             requestButton.setText(R.string.requestButton);
+        }
+    }
+
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (resultCode == RESULT_OK) {
+            if (requestCode == RENEW_REFRESH_TOKEN) {
+                new LoginTask().execute(availableAccounts[0]);
+            }
         }
     }
 
@@ -181,8 +193,11 @@ public class HomeActivity extends Activity  {
 
             try {
                 return APIUtility.getJson(accountManager, userInfoEndpoint, account, null);
-            } catch (AuthenticatorException | OperationCanceledException |IOException e) {
-                e.printStackTrace(); //FIXME:
+            } catch (IOException e) {
+                Log.w(TAG, "We couldn't fetch userinfo from server", e);
+                handleTokenExpireException(account, e);
+            } catch (AuthenticatorException | OperationCanceledException e) {
+                Log.w(TAG, "Coudln't get access token from accountmanager", e);
             } catch (UserNotAuthenticatedWrapperException e) {
                 //FIXME: we gotta handle this somehow
             }
@@ -198,10 +213,42 @@ public class HomeActivity extends Activity  {
 
             if (result == null) {
                 loginButton.setText("Couldn't get user info");
-                Log.w(TAG, "We couldn't fetch userinfo from server");
             } else {
                 loginButton.setText("Logged in as " + result.get("given_name"));
                 Log.i(TAG, "We manage to login user to server");
+            }
+        }
+
+        private void handleTokenExpireException(Account account, IOException e){
+            if (e.getMessage().contains("Access Token not valid")) {
+                accountManager.invalidateAllAccountTokens(account);
+                Log.i(TAG, "User should authenticate one more");
+                launchExpiredTokensIntent(account);
+            }
+        }
+
+        private void launchExpiredTokensIntent(Account account) {
+            // See https://github.com/kalemontes/OIDCAndroidLib/issues/4
+            try {
+                accountManager.getAccessToken(account, new AccountManagerCallback<Bundle>() {
+                    @Override
+                    public void run(AccountManagerFuture<Bundle> future) {
+                        try {
+                            Bundle bundle = future.getResult();
+                            Intent launch = (Intent) bundle.get(AccountManager.KEY_INTENT);
+                            if (launch != null) {
+                                launch.setFlags(0);
+                                HomeActivity.this.startActivityForResult(launch, RENEW_REFRESH_TOKEN);
+                            }
+                        } catch (OperationCanceledException | IOException | AuthenticatorException e) {
+                            Log.e(TAG, "Coudn't extract AuthenticationActivity lauch intent", e);
+                        }
+                    }
+                });
+            } catch (OperationCanceledException | IOException | AuthenticatorException e) {
+                Log.e(TAG, "Couldn't renew tokens", e);
+            } catch (UserNotAuthenticatedWrapperException e) {
+                //FIXME: we gotta handle this somehow
             }
         }
     }
