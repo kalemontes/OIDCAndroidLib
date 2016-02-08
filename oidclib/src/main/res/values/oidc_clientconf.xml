@@ -33,4 +33,9 @@
     is not suppose to be an oidc flow.
     For more info see http://openid.net/specs/openid-connect-core-1_0.html#Authentication -->
     <string name="oidc_flowType">Code</string>
+
+    <!-- Verifiable Identifier for an Issuer. An Issuer Identifier is a case sensitive URL using the
+     https scheme that contains scheme, host, and optionally, port number and path components and no
+     query or fragment components. -->
+    <string name="oidc_issuerId">https://www.example.com</string>
 </resources>

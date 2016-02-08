@@ -44,6 +44,8 @@ import com.lnikkila.oidc.minsdkcompat.CompatUri;
 import com.lnikkila.oidc.security.UserNotAuthenticatedWrapperException;
 
 import java.io.IOException;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -89,6 +91,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
     protected String[] scopes;
     protected OIDCUtils.Flows flowType;
     protected String secureState;
+    protected String issuerId;
 
     /*package*/ RelativeLayout parentLayout;
     /*package*/ WebView webView;
@@ -163,8 +166,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
             redirectUrl = this.getString(R.string.oidc_redirectUrl).toLowerCase();
             scopes = this.getResources().getStringArray(R.array.oidc_scopes);
             flowType = OIDCUtils.Flows.valueOf(this.getString(R.string.oidc_flowType));
-
-            //FIXME realm = extras.getString(KEY_OPT_OIDC_CLIENT_REALM);
+            issuerId = this.getString(R.string.oidc_issuerId);
 
             if (flowType == OIDCUtils.Flows.Password) {
                 clientFormLayout.setVisibility(View.VISIBLE);
@@ -239,6 +241,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
                     clientId,
                     clientSecret,
                     authCode,
+                    issuerId,
                     useOAuth2Only);
         } catch (IOException e) {
             Log.e(TAG, "Could not get response.", e);
@@ -256,7 +259,8 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
                     clientSecret,
                     scopes,
                     userName,
-                    userPwd);
+                    userPwd,
+                    issuerId);
         } catch (IOException e) {
             Log.e(TAG, "Could not get response.", e);
         }
@@ -347,6 +351,8 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
             scopes = scopesEdit.getText().toString().split(" ");
         }
         flowType = (OIDCUtils.Flows) flowTypeSpinner.getSelectedItem();
+
+        //TODO: we need another EditText to fill the issuer id
 
         if (isOIDCClientInfoOk(clientId, clientSecret, redirectUrl, scopes)) {
 
@@ -477,6 +483,8 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         }
 
         String extractedFragment = redirectUri.getEncodedFragment();
+
+        Log.d(TAG, String.format("Using %1$s flow", flowType.name()));
 
         switch (flowType) {
             case Implicit: {
@@ -649,6 +657,15 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
                 showErrorDialog("Could not get ID Token.");
             }
         }
+
+        protected boolean createOrUpdateAccount(TokenResponse response) {
+            if (isNewAccount) {
+                createAccount(response);
+            } else {
+                saveTokens(response);
+            }
+            return true;
+        }
     }
 
     /**
@@ -666,6 +683,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         @Override
         protected Boolean doInBackground(String... args) {
             String fragmentPart = args[0];
+            boolean didStoreTokens = false;
 
             Uri tokenExtrationUrl = new Uri.Builder().encodedQuery(fragmentPart).build();
             String accessToken = tokenExtrationUrl.getQueryParameter("access_token");
@@ -678,30 +696,50 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
             String returnedState = tokenExtrationUrl.getQueryParameter("state");
 
             if(secureState.equalsIgnoreCase(returnedState)) {
-                if (TextUtils.isEmpty(accessToken) || TextUtils.isEmpty(idToken) || TextUtils.isEmpty(tokenType) || expiresIn == null) {
-                    return false;
-                } else {
-                    Log.i(TAG, "AuthToken : " + accessToken);
+                if (!TextUtils.isEmpty(tokenType) && expiresIn != null) {
+                    Log.d(TAG, "AuthToken : " + accessToken);
 
-                    IdTokenResponse response = new IdTokenResponse();
-                    response.setAccessToken(accessToken);
-                    response.setIdToken(idToken);
-                    response.setTokenType(tokenType);
-                    response.setExpiresInSeconds(expiresIn);
-                    response.setScope(scope);
-                    response.setFactory(new GsonFactory());
+                    if (useOAuth2Only && !TextUtils.isEmpty(accessToken)) {
+                        TokenResponse response = new TokenResponse();
+                        response.setAccessToken(accessToken);
+                        response.setTokenType(tokenType);
+                        response.setExpiresInSeconds(expiresIn);
+                        response.setScope(scope);
+                        response.setFactory(new GsonFactory());
+                        didStoreTokens = createOrUpdateAccount(response);
+                    } else if(!TextUtils.isEmpty(idToken)) {
+                        IdTokenResponse response = new IdTokenResponse();
+                        response.setAccessToken(accessToken);
+                        response.setIdToken(idToken);
+                        response.setTokenType(tokenType);
+                        response.setExpiresInSeconds(expiresIn);
+                        response.setScope(scope);
+                        response.setFactory(new GsonFactory());
 
-                    if (isNewAccount) {
-                        createAccount(response);
+                        try {
+                            if (OIDCUtils.isValidIdToken(clientId, idToken, issuerId)) {
+                                // if there is no AT return it means we only request idToken so there's no need to validate the AT
+                                if (TextUtils.isEmpty(accessToken) || OIDCUtils.isValidAccessToken(accessToken, idToken)) {
+                                    didStoreTokens = createOrUpdateAccount(response);
+                                } else {
+                                    Log.e(TAG, "Invalid access token. The at_hash does not match with the return access token.");
+                                }
+                            } else {
+                                Log.e(TAG, "Invalid ID token returned.");
+                            }
+                        } catch (NoSuchAlgorithmException | InvalidKeyException | IOException e) {
+                            Log.e(TAG, "Can not validate Tokens.", e);
+                        }
                     } else {
-                        saveTokens(response);
+                        Log.e(TAG, "No access token or idToken found on the response fragment");
                     }
-                    return true;
+                } else {
+                    Log.e(TAG, "The token type and the expiration date on the response fragment are mandatory");
                 }
             } else {
                 Log.e(TAG, "Local and returned states don't match");
-                return false;
             }
+            return didStoreTokens;
         }
     }
 
@@ -721,6 +759,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         @Override
         protected Boolean doInBackground(String... args) {
             String fragmentPart = args[0];
+            boolean didStoreTokens = false;
 
             Uri tokenExtrationUrl = new Uri.Builder().encodedQuery(fragmentPart).build();
             String idToken = tokenExtrationUrl.getQueryParameter("id_token");
@@ -728,27 +767,19 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
             String returnedState = tokenExtrationUrl.getQueryParameter("state");
 
             if(secureState.equalsIgnoreCase(returnedState)) {
-                if (TextUtils.isEmpty(idToken) || TextUtils.isEmpty(authCode)) {
-                    return false;
-                } else {
+                if (!TextUtils.isEmpty(idToken) && !TextUtils.isEmpty(authCode)) {
                     Log.i(TAG, "Requesting access_token with AuthCode : " + authCode);
 
+                    //TODO: we already have the idToken and we aren't doing anything with it... why? Will it be returned once more when we get the access token?
                     TokenResponse response = requestAccessTokenWithAuthCode(authCode);
-                    if (response == null) {
-                        return false;
-                    } else {
-                        if (isNewAccount) {
-                            createAccount(response);
-                        } else {
-                            saveTokens(response);
-                        }
-                        return true;
+                    if (response != null) {
+                        didStoreTokens = createOrUpdateAccount(response);
                     }
                 }
             } else {
                 Log.e(TAG, "Local and returned states don't match");
-                return false;
             }
+            return didStoreTokens;
         }
     }
 
@@ -765,25 +796,21 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         protected Boolean doInBackground(String... args) {
             String authCode = args[0];
             String returnedState = args[1];
+            boolean didStoreTokens = false;
 
-            if(secureState.equalsIgnoreCase(returnedState)) {
+            if (secureState.equalsIgnoreCase(returnedState)) {
                 Log.i(TAG, "Requesting access_token with AuthCode : " + authCode);
 
                 TokenResponse response = requestAccessTokenWithAuthCode(authCode);
-                if (response == null) {
-                    return false;
-                } else {
-                    if (isNewAccount) {
-                        createAccount(response);
-                    } else {
-                        saveTokens(response);
+                if (response != null) {
+                    {
+                        didStoreTokens = createOrUpdateAccount(response);
                     }
-                    return true;
+                } else {
+                    Log.e(TAG, "Local and returned states don't match");
                 }
-            } else {
-                Log.e(TAG, "Local and returned states don't match");
-                return false;
             }
+            return didStoreTokens;
         }
     }
 
@@ -792,23 +819,17 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         protected Boolean doInBackground(String... args) {
             String userName = args[0];
             String userPwd = args[1];
+            boolean didStoreTokens = false;
 
             Log.d(TAG, "Requesting access_token with username : " + userName);
 
             TokenResponse response = requestAccessTokenWithUserNamePassword(userName, userPwd);
 
-            if (response == null) {
-                return false;
+            if (response != null) {
+                didStoreTokens = createOrUpdateAccount(response);
             }
-            else {
-                if (isNewAccount) {
-                    createAccount(response);
-                } else {
-                    saveTokens(response);
-                }
 
-                return true;
-            }
+            return didStoreTokens;
         }
     }
 

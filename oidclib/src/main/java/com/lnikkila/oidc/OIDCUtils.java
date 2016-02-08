@@ -2,6 +2,7 @@ package com.lnikkila.oidc;
 
 import android.support.annotation.NonNull;
 import android.text.TextUtils;
+import android.util.Base64;
 import android.util.Log;
 
 import com.github.kevinsawicki.http.HttpRequest;
@@ -21,6 +22,9 @@ import com.google.api.client.json.gson.GsonFactory;
 import com.google.gson.Gson;
 
 import java.io.IOException;
+import java.security.InvalidKeyException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Collections;
@@ -185,13 +189,13 @@ public class OIDCUtils {
      */
     public static TokenResponse requestTokensWithCodeGrant(String tokenServerUrl, String redirectUrl,
                                                            String clientId, String clientSecret,
-                                                           String authCode, boolean useOAuth2Only) throws IOException {
-        return requestTokensWithCodeGrant(tokenServerUrl, redirectUrl, clientId, clientSecret, authCode, useOAuth2Only, null);
+                                                           String authCode, String issuerId, boolean useOAuth2Only) throws IOException {
+        return requestTokensWithCodeGrant(tokenServerUrl, redirectUrl, clientId, clientSecret, authCode, issuerId, useOAuth2Only, null);
     }
 
     public static TokenResponse requestTokensWithCodeGrant(String tokenServerUrl, String redirectUrl,
                                                            String clientId, String clientSecret,
-                                                           String authCode, boolean useOAuth2Only,
+                                                           String authCode, String issuerId, boolean useOAuth2Only,
                                                            Map<String,String> extras) throws IOException {
 
         AuthorizationCodeTokenRequest request = new AuthorizationCodeTokenRequest(
@@ -235,8 +239,18 @@ public class OIDCUtils {
             IdTokenResponse response = IdTokenResponse.execute(request);
             String idToken = response.getIdToken();
 
-            if (isValidIdToken(clientId, idToken)) {
-                return response;
+            if (isValidIdToken(clientId, idToken, issuerId)) {
+                try {
+                    String accessToken = response.getAccessToken();
+                    // if there is no AT return it means we only request idToken so there's no need to validate the AT
+                    if (TextUtils.isEmpty(accessToken) || isValidAccessToken(accessToken, idToken)) {
+                        return response;
+                    } else {
+                        throw new IOException("Invalid access token. The at_hash does not match with the return access token.");
+                    }
+                } catch (NoSuchAlgorithmException | InvalidKeyException e) {
+                    throw new IOException("Can not validate AccessToken.", e);
+                }
             } else {
                 throw new IOException("Invalid ID token returned.");
             }
@@ -245,12 +259,12 @@ public class OIDCUtils {
 
 
     public static TokenResponse requestTokensWithPasswordGrant(String tokenServerUrl,String clientId, String clientSecret,
-                                                               String[] scopes, String userName, String userPwd) throws IOException {
-        return requestTokensWithPasswordGrant(tokenServerUrl, clientId, clientSecret, scopes, userName, userPwd, null);
+                                                               String[] scopes, String userName, String userPwd, String issuerId) throws IOException {
+        return requestTokensWithPasswordGrant(tokenServerUrl, clientId, clientSecret, scopes, userName, userPwd, issuerId, null);
     }
 
     public static TokenResponse requestTokensWithPasswordGrant(String tokenServerUrl,String clientId, String clientSecret,
-                                                               String[] scopes, String userName, String userPwd,
+                                                               String[] scopes, String userName, String userPwd, String issuerId,
                                                                Map<String,String> extras) throws IOException {
 
         List<String> scopesList = Arrays.asList(scopes);
@@ -289,7 +303,7 @@ public class OIDCUtils {
             IdTokenResponse tokenResponse = IdTokenResponse.execute(request);
             String idToken = tokenResponse.getIdToken();
 
-            if (isValidIdToken(clientId, idToken)) {
+            if (isValidIdToken(clientId, idToken, issuerId)) {
                 return tokenResponse;
             } else {
                 throw new IOException("Invalid ID token returned.");
@@ -367,20 +381,61 @@ public class OIDCUtils {
 
     /**
      * Verifies an ID Token.
-     * TODO: Look into verifying the token issuer as well?
      * TODO: Look into verifying the token nonce as well?
      */
-    public static boolean isValidIdToken(String clientId, String tokenString) throws IOException {
+    public static boolean isValidIdToken(String clientId, String tokenString, String issuer) throws IOException {
 
         List<String> audiences = Collections.singletonList(clientId);
         IdTokenVerifier verifier = new IdTokenVerifier.Builder()
                 .setAudience(audiences)
                 .setAcceptableTimeSkewSeconds(1000)
+                .setIssuer(issuer)
                 .build();
 
         IdToken idToken = IdToken.parse(new GsonFactory(), tokenString);
 
         return verifier.verify(idToken);
+    }
+
+    /**
+     * Validates the access token issued with an ID Token.
+     * @param accessTokenString
+     * @param idTokenString
+     * @return
+     * @throws IOException
+     * @throws NoSuchAlgorithmException
+     * @see <a hfre="http://openid.net/specs/openid-connect-core-1_0.html#ImplicitTokenValidation">http://openid.net/specs/openid-connect-core-1_0.html#ImplicitTokenValidation</a>
+     */
+    public static boolean isValidAccessToken(String accessTokenString, String idTokenString) throws IOException, NoSuchAlgorithmException, InvalidKeyException {
+        boolean isValidAt = false;
+        if (!TextUtils.isEmpty(accessTokenString) && !TextUtils.isEmpty(idTokenString)) {
+            IdToken idToken = IdToken.parse(new GsonFactory(), idTokenString);
+            String alg = idToken.getHeader().getAlgorithm();
+            byte[] atBytes = accessTokenString.getBytes("UTF-8");
+            String atHash = idToken.getPayload().getAccessTokenHash();
+
+            String forgedAtHash;
+            if ("HS256".equals(alg) || "RS256".equals(alg)) {
+                MessageDigest digest = MessageDigest.getInstance("SHA-256");
+                digest.update(atBytes, 0, atBytes.length);
+                atBytes = digest.digest();
+                atBytes = Arrays.copyOfRange(atBytes, 0, atBytes.length / 2);
+                forgedAtHash = Base64.encodeToString(atBytes, Base64.URL_SAFE | Base64.NO_PADDING | Base64.NO_WRAP);
+
+                Log.d("OIDCUtils", "Alg : " + alg);
+                Log.d("OIDCUtils", "Receive at_hash : " + atHash);
+                Log.d("OIDCUtils", "Forged at_hash  : " + forgedAtHash);
+
+                isValidAt = atHash.equals(forgedAtHash);
+            } else {
+                Log.w("OIDCUtils", "Unsupported alg claim : " +alg + ". Supported alg are HS256, RS256");
+            }
+
+        } else {
+            Log.w("OIDCUtils", "Can't verify access token, AT or idToken empty");
+        }
+
+        return isValidAt;
     }
 
     /**
