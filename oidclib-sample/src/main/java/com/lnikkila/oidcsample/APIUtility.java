@@ -9,7 +9,6 @@ import android.os.Bundle;
 import com.github.kevinsawicki.http.HttpRequest;
 import com.google.gson.Gson;
 import com.lnikkila.oidc.OIDCAccountManager;
-import com.lnikkila.oidc.OIDCUtils;
 import com.lnikkila.oidc.security.UserNotAuthenticatedWrapperException;
 
 import java.io.IOException;
@@ -60,7 +59,7 @@ public class APIUtility {
 
         // Prepare an API request using the accessToken
         HttpRequest request = new HttpRequest(url, method);
-        request = OIDCUtils.prepareApiRequest(request, accessToken);
+        request = prepareApiRequest(request, accessToken);
 
         if (request.ok()) {
             return request.body();
@@ -86,5 +85,16 @@ public class APIUtility {
                 throw new IOException(request.code() + " " + request.message() + " " + requestContent);
             }
         }
+    }
+
+    /**
+     * Prepares an arbitrary API request by injecting an ID Token into an HttpRequest. Uses an
+     * external library to make my life easier, but you can modify this to use whatever in case you
+     * don't like the (small) dependency.
+     */
+    public static HttpRequest prepareApiRequest(HttpRequest request, String idToken)
+            throws IOException {
+
+        return request.authorization("Bearer " + idToken).acceptJson();
     }
 }

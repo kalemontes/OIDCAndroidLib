@@ -193,7 +193,7 @@ public class HomeActivity extends Activity  {
         }
 
         /**
-         * Makes the API request. We could use the OIDCUtils.getUserInfo() method, but we'll do it
+         * Makes the API request. We could use the OIDCRequestManager.getUserInfo() method, but we'll do it
          * like this to illustrate making generic API requests after we've logged in.
          */
         @Override

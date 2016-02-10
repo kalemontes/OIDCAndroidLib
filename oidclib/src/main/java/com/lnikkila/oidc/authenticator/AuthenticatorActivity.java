@@ -13,7 +13,6 @@ import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
-import android.support.annotation.Nullable;
 import android.support.design.widget.TextInputLayout;
 import android.text.Editable;
 import android.text.TextUtils;
@@ -36,17 +35,13 @@ import android.widget.Toast;
 
 import com.google.api.client.auth.oauth2.TokenResponse;
 import com.google.api.client.auth.openidconnect.IdTokenResponse;
-import com.google.api.client.json.gson.GsonFactory;
 import com.lnikkila.oidc.OIDCAccountManager;
-import com.lnikkila.oidc.OIDCUtils;
+import com.lnikkila.oidc.OIDCRequestManager;
 import com.lnikkila.oidc.R;
 import com.lnikkila.oidc.minsdkcompat.CompatUri;
 import com.lnikkila.oidc.security.UserNotAuthenticatedWrapperException;
 
 import java.io.IOException;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -75,23 +70,13 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
     public static final String KEY_IS_NEW_ACCOUNT       = "com.lnikkila.oidc.KEY_IS_NEW_ACCOUNT";
     public static final String KEY_ACCOUNT_NAME         = "com.lnikkila.oidc.KEY_ACCOUNT_NAME";
 
-    protected String authorizationEnpoint;
-    protected String tokenEndpoint;
-    protected String userInfoEndpoint;
-
     private OIDCAccountManager accountManager;
+    private OIDCRequestManager requestManager;
     private KeyguardManager keyguardManager;
     private Account account;
     private boolean isNewAccount;
 
-    protected boolean useOAuth2Only;
-    protected String clientId;
-    protected String clientSecret;
-    protected String redirectUrl;
-    protected String[] scopes;
-    protected OIDCUtils.Flows flowType;
     protected String secureState;
-    protected String issuerId;
 
     /*package*/ RelativeLayout parentLayout;
     /*package*/ WebView webView;
@@ -109,10 +94,6 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_authentication);
-
-        authorizationEnpoint = getString(R.string.op_authorizationEnpoint);
-        tokenEndpoint = getString(R.string.op_tokenEndpoint);
-        userInfoEndpoint = getString(R.string.op_userInfoEndpoint);
 
         accountManager = new OIDCAccountManager(this);
         keyguardManager = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
@@ -159,20 +140,13 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
             Log.d(TAG, "Initiated activity for completing OIDC client options.");
         }
         else {
-            // Fetch the OIDC client options
-            useOAuth2Only = this.getResources().getBoolean(R.bool.oidc_oauth2only);
-            clientId = this.getString(R.string.oidc_clientId);
-            clientSecret = this.getString(R.string.oidc_clientSecret);
-            redirectUrl = this.getString(R.string.oidc_redirectUrl).toLowerCase();
-            scopes = this.getResources().getStringArray(R.array.oidc_scopes);
-            flowType = OIDCUtils.Flows.valueOf(this.getString(R.string.oidc_flowType));
-            issuerId = this.getString(R.string.oidc_issuerId);
+            // starts the request manager with the OIDC client setting in /res/values/oidc_clientconf.xml
+            requestManager = new OIDCRequestManager(this);
 
-            if (flowType == OIDCUtils.Flows.Password) {
+            if (requestManager.getFlowType() == OIDCRequestManager.Flows.Password) {
                 clientFormLayout.setVisibility(View.VISIBLE);
                 webView.setVisibility(View.GONE);
                 setupPasswordGrantForm();
-
                 Log.d(TAG, "Initiated activity for password grant form.");
             } else {
                 clientFormLayout.setVisibility(View.GONE);
@@ -212,60 +186,13 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
 
     protected String getAuthenticationUrl() {
         //Generates a new state to help prevent cross-site scripting attacks
-        secureState = OIDCUtils.generateStateToken(getString(R.string.op_usualName));
+        secureState = OIDCRequestManager.generateStateToken(getString(R.string.op_usualName));
 
-        HashMap<String, String> extraParams = parseStringArray(R.array.oidc_authextras);
-
-        // Generate the authentication URL using the OIDC client options
-        String authUrl = OIDCUtils.newAuthenticationUrl(
-                authorizationEnpoint,
-                flowType,
-                clientId,
-                redirectUrl,
-                scopes,
-                secureState,
-                extraParams);
+        // Generate the authentication URL using the OIDC client settings
+        String authUrl = requestManager.getAuthenticationUrl(secureState);
 
         Log.d(TAG, String.format("Initiated activity for getting authorisation with URL '%s'.", authUrl));
         return authUrl;
-    }
-
-    @Nullable
-    protected TokenResponse requestAccessTokenWithAuthCode(String authCode) {
-        TokenResponse response = null;
-
-        try {
-            response = OIDCUtils.requestTokensWithCodeGrant(
-                    tokenEndpoint,
-                    redirectUrl,
-                    clientId,
-                    clientSecret,
-                    authCode,
-                    issuerId,
-                    useOAuth2Only);
-        } catch (IOException e) {
-            Log.e(TAG, "Could not get response.", e);
-        }
-        return response;
-    }
-
-    @Nullable
-    protected TokenResponse requestAccessTokenWithUserNamePassword(String userName, String userPwd) {
-        TokenResponse response = null;
-        try {
-            response = OIDCUtils.requestTokensWithPasswordGrant(
-                    tokenEndpoint,
-                    clientId,
-                    clientSecret,
-                    scopes,
-                    userName,
-                    userPwd,
-                    issuerId);
-        } catch (IOException e) {
-            Log.e(TAG, "Could not get response.", e);
-        }
-
-        return response;
     }
 
     //endregion
@@ -281,13 +208,13 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
             }
         });
         flowTypeSpinner = (Spinner) findViewById(R.id.flowTypeSpinner);
-        flowTypeSpinner.setAdapter(new FlowTypesAdapter(this, android.R.layout.simple_spinner_item, OIDCUtils.Flows.values()));
+        flowTypeSpinner.setAdapter(new FlowTypesAdapter(this, android.R.layout.simple_spinner_item, OIDCRequestManager.Flows.values()));
 
         setupFormFloatingLabel();
     }
 
-    private class FlowTypesAdapter extends ArrayAdapter<OIDCUtils.Flows> {
-        public FlowTypesAdapter(Context context, int resource, OIDCUtils.Flows[] objects) {
+    private class FlowTypesAdapter extends ArrayAdapter<OIDCRequestManager.Flows> {
+        public FlowTypesAdapter(Context context, int resource, OIDCRequestManager.Flows[] objects) {
             super(context, resource, objects);
         }
 
@@ -297,7 +224,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
                 convertView = getLayoutInflater().inflate(R.layout.spinner_item_flowtype, parent, false);
             }
 
-            OIDCUtils.Flows item = getItem(position);
+            OIDCRequestManager.Flows item = getItem(position);
             TextView textView = (TextView) convertView.findViewById(android.R.id.text1);
             textView.setText(String.format(getString(R.string.OIDCFlowTypeOptionHint), item.name()));
 
@@ -310,7 +237,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
                 convertView = getLayoutInflater().inflate(R.layout.spinner_item_flowtype, parent, false);
             }
 
-            OIDCUtils.Flows item = getItem(position);
+            OIDCRequestManager.Flows item = getItem(position);
             TextView textView = (TextView) convertView.findViewById(android.R.id.text1);
             textView.setText(item.name());
 
@@ -341,29 +268,39 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         EditText redirectUriEdit = (EditText) findViewById(R.id.redirectUriEditText);
         EditText scopesEdit = (EditText) findViewById(R.id.scopesEditText);
 
-        clientId = clientidEdit.getText().toString();
-        clientSecret = clientSecretEdit.getText().toString();
-        redirectUrl = redirectUriEdit.getText().toString().toLowerCase();
+        String clientId = clientidEdit.getText().toString();
+        String clientSecret = clientSecretEdit.getText().toString();
+        String redirectUrl = redirectUriEdit.getText().toString().toLowerCase();
+        String[] scopes;
         if (TextUtils.isEmpty(scopesEdit.getText().toString())) {
             scopes = null;
-        }
-        else {
+        } else {
             scopes = scopesEdit.getText().toString().split(" ");
         }
-        flowType = (OIDCUtils.Flows) flowTypeSpinner.getSelectedItem();
+        OIDCRequestManager.Flows flowType = (OIDCRequestManager.Flows) flowTypeSpinner.getSelectedItem();
 
-        //TODO: we need another EditText to fill the issuer id
+        if (isOIDCClientConfigurationOk(clientId, clientSecret, redirectUrl, scopes)) {
 
-        if (isOIDCClientInfoOk(clientId, clientSecret, redirectUrl, scopes)) {
+            requestManager = new OIDCRequestManager(this)
+                    .setClientId(clientId)
+                    .setClientSecret(clientSecret)
+                    .setFlowType(flowType)
+                    .setRedirectUrl(redirectUrl)
+//                    .setIssuerId() //TODO: we need another EditText to fill the issuer id
+                    .setScopes(scopes);
 
-            // Generate a new authorisation URL
-            String authUrl = getAuthenticationUrl();
+            if(requestManager.checkConfiguration()) {
+                // Generate a new authorisation URL
+                String authUrl = getAuthenticationUrl();
 
-            Log.d(TAG, String.format("Initiates WebView workflow with URL '%s'.", authUrl));
+                Log.d(TAG, String.format("Initiates WebView workflow with URL '%s'.", authUrl));
 
-            clientFormLayout.setVisibility(View.INVISIBLE);
-            webView.setVisibility(View.VISIBLE);
-            webView.loadUrl(authUrl);
+                clientFormLayout.setVisibility(View.INVISIBLE);
+                webView.setVisibility(View.VISIBLE);
+                webView.loadUrl(authUrl);
+            } else {
+                //TODO:
+            }
         }
     }
 
@@ -390,7 +327,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         }
     }
 
-    private boolean isOIDCClientInfoOk(String clientId, String secret, String redirectUrl, String[] scopes) {
+    private boolean isOIDCClientConfigurationOk(String clientId, String secret, String redirectUrl, String[] scopes) {
         boolean isOk = true;
         if (TextUtils.isEmpty(clientId)){
             clientIdInputLayout.setError(getString(R.string.OIDCOptionsMandatoryError));
@@ -484,9 +421,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
 
         String extractedFragment = redirectUri.getEncodedFragment();
 
-        Log.d(TAG, String.format("Using %1$s flow", flowType.name()));
-
-        switch (flowType) {
+        switch (requestManager.getFlowType()) {
             case Implicit: {
                 if (!TextUtils.isEmpty(extractedFragment)) {
                     ImplicitFlowTask task = new ImplicitFlowTask();
@@ -599,12 +534,10 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
     private boolean handleUri(String uri) {
         if (handleAuthorizationErrors(uri)) {
             return true;
-        }
-        else if (uri.startsWith(redirectUrl)) {
+        } else if (requestManager.isRedirectUrl(uri)) {
             finishAuthorization(uri);
             return true;
         }
-
         return false;
     }
 
@@ -683,70 +616,19 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         @Override
         protected Boolean doInBackground(String... args) {
             String fragmentPart = args[0];
-            boolean didStoreTokens = false;
-
-            Uri tokenExtrationUrl = new Uri.Builder().encodedQuery(fragmentPart).build();
-            String accessToken = tokenExtrationUrl.getQueryParameter("access_token");
-            String idToken = tokenExtrationUrl.getQueryParameter("id_token");
-            String tokenType = tokenExtrationUrl.getQueryParameter("token_type");
-            String expiresInString = tokenExtrationUrl.getQueryParameter("expires_in");
-            Long expiresIn = (!TextUtils.isEmpty(expiresInString)) ? Long.decode(expiresInString) : null;
-
-            String scope = tokenExtrationUrl.getQueryParameter("scope");
-            String returnedState = tokenExtrationUrl.getQueryParameter("state");
-
-            if(secureState.equalsIgnoreCase(returnedState)) {
-                if (!TextUtils.isEmpty(tokenType) && expiresIn != null) {
-                    Log.d(TAG, "AuthToken : " + accessToken);
-
-                    if (useOAuth2Only && !TextUtils.isEmpty(accessToken)) {
-                        TokenResponse response = new TokenResponse();
-                        response.setAccessToken(accessToken);
-                        response.setTokenType(tokenType);
-                        response.setExpiresInSeconds(expiresIn);
-                        response.setScope(scope);
-                        response.setFactory(new GsonFactory());
-                        didStoreTokens = createOrUpdateAccount(response);
-                    } else if(!TextUtils.isEmpty(idToken)) {
-                        IdTokenResponse response = new IdTokenResponse();
-                        response.setAccessToken(accessToken);
-                        response.setIdToken(idToken);
-                        response.setTokenType(tokenType);
-                        response.setExpiresInSeconds(expiresIn);
-                        response.setScope(scope);
-                        response.setFactory(new GsonFactory());
-
-                        try {
-                            if (OIDCUtils.isValidIdToken(clientId, idToken, issuerId)) {
-                                // if there is no AT return it means we only request idToken so there's no need to validate the AT
-                                if (TextUtils.isEmpty(accessToken) || OIDCUtils.isValidAccessToken(accessToken, idToken)) {
-                                    didStoreTokens = createOrUpdateAccount(response);
-                                } else {
-                                    Log.e(TAG, "Invalid access token. The at_hash does not match with the return access token.");
-                                }
-                            } else {
-                                Log.e(TAG, "Invalid ID token returned.");
-                            }
-                        } catch (NoSuchAlgorithmException | InvalidKeyException | IOException e) {
-                            Log.e(TAG, "Can not validate Tokens.", e);
-                        }
-                    } else {
-                        Log.e(TAG, "No access token or idToken found on the response fragment");
-                    }
-                } else {
-                    Log.e(TAG, "The token type and the expiration date on the response fragment are mandatory");
-                }
-            } else {
-                Log.e(TAG, "Local and returned states don't match");
+            try {
+                TokenResponse response = requestManager.parseTokensFromImplicitResponseFragmentPart(fragmentPart, secureState);
+                return createOrUpdateAccount(response);
+            } catch (IOException e) {
+                Log.e(TAG, "Could not reconstruct a token response from the HTTP fragment", e);
+                return false;
             }
-            return didStoreTokens;
         }
     }
 
     /**
      * Handles Hybrid flow by extracting asynchronously the authorization code from a Uri fragment
-     * then exchanging it for an {@link IdTokenResponse} by making a request to the
-     * {@link #tokenEndpoint}.
+     * then exchanging it for an {@link IdTokenResponse} by making a request to the token endpoint.
      * <br/>
      * An Uri string containing a Uri fragment is passed as first parameter of the
      * {@link AsyncTask#execute(Object[])} method, i.e :
@@ -771,9 +653,11 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
                     Log.i(TAG, "Requesting access_token with AuthCode : " + authCode);
 
                     //TODO: we already have the idToken and we aren't doing anything with it... why? Will it be returned once more when we get the access token?
-                    TokenResponse response = requestAccessTokenWithAuthCode(authCode);
-                    if (response != null) {
+                    try {
+                        TokenResponse response = requestManager.requestTokensWithCodeGrant(authCode);
                         didStoreTokens = createOrUpdateAccount(response);
+                    } catch (IOException e) {
+                        Log.e(TAG, "Could not get response from the token endpoint", e);
                     }
                 }
             } else {
@@ -785,7 +669,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
 
     /**
      * Handles Code flow by requesting asynchronously a {@link IdTokenResponse} to the
-     * {@link #tokenEndpoint} using an authorization code.
+     * token endpoint using an authorization code.
      * <br/>
      * The authorization code is passed as first parameter of the
      * {@link AsyncTask#execute(Object[])} method.
@@ -800,15 +684,14 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
 
             if (secureState.equalsIgnoreCase(returnedState)) {
                 Log.i(TAG, "Requesting access_token with AuthCode : " + authCode);
-
-                TokenResponse response = requestAccessTokenWithAuthCode(authCode);
-                if (response != null) {
-                    {
-                        didStoreTokens = createOrUpdateAccount(response);
-                    }
-                } else {
-                    Log.e(TAG, "Local and returned states don't match");
+                try {
+                    TokenResponse response = requestManager.requestTokensWithCodeGrant(authCode);
+                    didStoreTokens = createOrUpdateAccount(response);
+                } catch (IOException e) {
+                    Log.e(TAG, "Could not get response from the token endpoint", e);
                 }
+            } else {
+                Log.e(TAG, "Local and returned states don't match");
             }
             return didStoreTokens;
         }
@@ -822,13 +705,12 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
             boolean didStoreTokens = false;
 
             Log.d(TAG, "Requesting access_token with username : " + userName);
-
-            TokenResponse response = requestAccessTokenWithUserNamePassword(userName, userPwd);
-
-            if (response != null) {
+            try {
+                TokenResponse response = requestManager.requestTokensWithPasswordGrant(userName, userPwd);
                 didStoreTokens = createOrUpdateAccount(response);
+            } catch (IOException e) {
+                Log.e(TAG, "Could not get response from the token endpoint", e);
             }
-
             return didStoreTokens;
         }
     }
@@ -836,6 +718,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
     //endregion
 
     //region Account Management
+    //TODO: this should be handled by the OIDCAccountManager
 
     /**
      * AccountManager expects that each account has a unique name. If a new account has the same name
@@ -870,7 +753,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
                 } else {
                     // If for a reason we can't get the subject or want to use a other claim instead,
                     // we will try to get the `claimAsAccountName` using the UserInfo Endpoint
-                    Map userInfo = OIDCUtils.getUserInfo(userInfoEndpoint, response.getAccessToken());
+                    Map userInfo = requestManager.getUserInfo(response.getAccessToken(), Map.class);
                     if (userInfo.containsKey(claimAsPartOfAccountName)) {
                         String userName = (String) userInfo.get(claimAsPartOfAccountName);
                         accountName = String.format("%1$s : %2$s", getString(R.string.app_name), userName);
@@ -984,15 +867,5 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         intent.putExtra(AuthenticatorActivity.KEY_ACCOUNT_NAME, accountName);
         intent.putExtra(AuthenticatorActivity.KEY_IS_NEW_ACCOUNT, true);
         return intent;
-    }
-
-    public HashMap<String, String> parseStringArray(int stringArrayResourceId) {
-        String[] stringArray = getResources().getStringArray(stringArrayResourceId);
-        HashMap<String, String> outputArray = new HashMap<>(stringArray.length);
-        for (String entry : stringArray) {
-            String[] splitResult = entry.split("\\|", 2);
-            outputArray.put(splitResult[0], splitResult[1]);
-        }
-        return outputArray;
     }
 }
