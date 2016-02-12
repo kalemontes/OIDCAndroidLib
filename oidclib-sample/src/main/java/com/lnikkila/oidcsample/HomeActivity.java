@@ -22,6 +22,7 @@ import android.widget.ProgressBar;
 import android.widget.Toast;
 
 import com.lnikkila.oidc.OIDCAccountManager;
+import com.lnikkila.oidc.authenticator.OIDCClientConfigurationActivity;
 import com.lnikkila.oidc.security.UserNotAuthenticatedWrapperException;
 
 import java.io.IOException;
@@ -170,6 +171,14 @@ public class HomeActivity extends AppCompatActivity {
                         .create()
                         .show();
         }
+    }
+
+    public void doConfEdit(View view) {
+        // Never use this on a release. The OpenId Connect client configuration should be stored in
+        // a "secure" way (not on user preferences), if possible obfuscated, and not be allow to be edited.
+        // Use it on dev or to test your OpenId Provider only.
+        Intent intent = new Intent(this, OIDCClientConfigurationActivity.class);
+        startActivity(intent);
     }
 
     public void doRequest(View view) {
