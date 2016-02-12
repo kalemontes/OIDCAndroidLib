@@ -10,21 +10,19 @@
 
     <Button
         android:id="@+id/loginButton"
+        android:theme="@style/Theme.OidcLib.Button"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_alignParentLeft="true"
         android:layout_alignParentRight="true"
-        android:background="@color/app_primary"
-        android:fontFamily="sans-serif-condensed"
         android:onClick="doLogin"
         android:padding="10pt"
         android:text="@string/loginButtonText"
-        android:textAllCaps="true"
-        android:textColor="@android:color/white"
-        android:textStyle="bold" />
+        tools:ignore="RtlHardcoded" />
 
     <Button
-        android:id="@+id/requestButton"
+        android:id="@+id/editConfButton"
+        android:theme="@style/Theme.OidcLib.Button"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_alignEnd="@+id/loginButton"
@@ -33,17 +31,28 @@
         android:layout_alignRight="@+id/loginButton"
         android:layout_below="@+id/loginButton"
         android:layout_marginTop="37dp"
-        android:background="@color/app_primary"
-        android:fontFamily="sans-serif-condensed"
+        android:onClick="doConfEdit"
+        android:padding="10pt"
+        android:text="@string/editConfButton" />
+
+    <Button
+        android:id="@+id/requestButton"
+        android:theme="@style/Theme.OidcLib.Button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignEnd="@+id/editConfButton"
+        android:layout_alignParentLeft="true"
+        android:layout_alignParentStart="true"
+        android:layout_alignRight="@+id/editConfButton"
+        android:layout_below="@+id/editConfButton"
+        android:layout_marginTop="37dp"
         android:onClick="doRequest"
         android:padding="10pt"
-        android:text="@string/requestButton"
-        android:textAllCaps="true"
-        android:textColor="@android:color/white"
-        android:textStyle="bold" />
+        android:text="@string/requestButton" />
 
     <Button
         android:id="@+id/logoutButton"
+        android:theme="@style/Theme.OidcLib.Button"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_alignEnd="@+id/loginButton"
@@ -52,14 +61,9 @@
         android:layout_alignRight="@+id/loginButton"
         android:layout_below="@+id/requestButton"
         android:layout_marginTop="37dp"
-        android:background="@color/app_primary"
-        android:fontFamily="sans-serif-condensed"
         android:onClick="doLogout"
         android:padding="10pt"
-        android:text="@string/logoutButtonText"
-        android:textAllCaps="true"
-        android:textColor="@android:color/white"
-        android:textStyle="bold" />
+        android:text="@string/logoutButtonText" />
 
     <ProgressBar
         android:id="@+id/progressBar"
