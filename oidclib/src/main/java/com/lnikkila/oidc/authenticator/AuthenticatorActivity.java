@@ -3,6 +3,7 @@ package com.lnikkila.oidc.authenticator;
 import android.accounts.Account;
 import android.accounts.AccountAuthenticatorActivity;
 import android.accounts.AccountManager;
+import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.app.AlertDialog;
 import android.app.KeyguardManager;
@@ -25,12 +26,9 @@ import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.RelativeLayout;
-import android.widget.Spinner;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import com.google.api.client.auth.oauth2.TokenResponse;
@@ -66,7 +64,6 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
 
     public static final int ASK_USER_ENCRYPT_PIN_REQUEST_CODE = 1;
 
-    public static final String KEY_PRESENT_OPTS_FORM    = "com.lnikkila.oidc.KEY_PRESENT_OPTS_FORM";
     public static final String KEY_IS_NEW_ACCOUNT       = "com.lnikkila.oidc.KEY_IS_NEW_ACCOUNT";
     public static final String KEY_ACCOUNT_NAME         = "com.lnikkila.oidc.KEY_ACCOUNT_NAME";
 
@@ -80,13 +77,11 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
 
     /*package*/ RelativeLayout parentLayout;
     /*package*/ WebView webView;
-    /*package*/ View clientFormLayout;
-    /*package*/ TextInputLayout clientIdInputLayout;
-    /*package*/ TextInputLayout clientSecretInputLayout;
-    /*package*/ TextInputLayout redirectUriInputLayout;
-    /*package*/ TextInputLayout scopesInputLayout;
-    /*package*/ Button validateClientButton;
-    /*package*/ Spinner flowTypeSpinner;
+
+    /*package*/ View passwordGrantFormLayout;
+    /*package*/ TextInputLayout userNameInputLayout;
+    /*package*/ TextInputLayout userPasswordInputLayout;
+    /*package*/ Button validatePasswordGrantFormButton;
 
     //region Activity Lifecycle
 
@@ -94,9 +89,6 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_authentication);
-
-        accountManager = new OIDCAccountManager(this);
-        keyguardManager = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
 
         Bundle extras = getIntent().getExtras();
 
@@ -106,55 +98,20 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         // In case we're renewing authorisation, we also got an Account object that we're supposed
         // to work with.
         String accountName = extras.getString(KEY_ACCOUNT_NAME);
+
+        accountManager = new OIDCAccountManager(this);
+        keyguardManager = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
+        // starts the request manager with the OIDC client setting in /res/values/oidc_clientconf.xml
+        requestManager = new OIDCRequestManager(this);
+
+
         if (accountName != null) {
             account = accountManager.getAccountByName(accountName);
         }
 
-        // In case that the needed OIDC options are not set, present form to set them in order to create the authentication URL
-        boolean needsOptionsForm = extras.getBoolean(KEY_PRESENT_OPTS_FORM, false);
-
-        parentLayout = (RelativeLayout) findViewById(R.id.authenticatorActivityLayout);
-
-        // Initialise the WebView
-        // see  http://stackoverflow.com/a/8011027/665823 of why we doing this :
-        webView = new WebView(this);
-        parentLayout.addView(webView, new RelativeLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT));
-        //instead of this :
-        //webView = (WebView) findViewById(R.id.WebView);
-
-        webView.getSettings().setJavaScriptEnabled(getResources().getBoolean(R.bool.webview_allow_js));
-        webView.setWebViewClient(new AuthorizationWebViewClient());
-
-        // Initialise the OIDC client definition form
-        clientFormLayout = findViewById(R.id.clientFormLayout);
-
-        if (needsOptionsForm) {
-            //OIDC options form container
-            setupOIDCOptionsForm();
-
-            webView.setVisibility(View.GONE);
-            clientFormLayout.setVisibility(View.VISIBLE);
-
-            Log.d(TAG, "Initiated activity for completing OIDC client options.");
-        }
-        else {
-            // starts the request manager with the OIDC client setting in /res/values/oidc_clientconf.xml
-            requestManager = new OIDCRequestManager(this);
-
-            if (requestManager.getFlowType() == OIDCRequestManager.Flows.Password) {
-                clientFormLayout.setVisibility(View.VISIBLE);
-                webView.setVisibility(View.GONE);
-                setupPasswordGrantForm();
-                Log.d(TAG, "Initiated activity for password grant form.");
-            } else {
-                clientFormLayout.setVisibility(View.GONE);
-                webView.setVisibility(View.VISIBLE);
-                String authUrl = getAuthenticationUrl();
-                webView.loadUrl(authUrl);
-            }
-        }
+        boolean isPasswordFlow = requestManager.getFlowType() == OIDCRequestManager.Flows.Password;
+        initAuthenticationWebView(isPasswordFlow);
+        setupPasswordGrantForm(isPasswordFlow);
     }
 
     @Override
@@ -176,132 +133,149 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
     protected void onDestroy() {
         super.onDestroy();
         //Handles possible webView leak : http://stackoverflow.com/a/8011027/665823
-        parentLayout.removeAllViews();
-        webView.destroy();
+        if (parentLayout != null) parentLayout.removeAllViews();
+        if(webView != null) webView.destroy();
     }
 
     //endregion
 
-    //region Requests to the Identity Provider
+    //region Authentication WebView
 
-    protected String getAuthenticationUrl() {
+    @SuppressLint("SetJavaScriptEnabled")
+    private void initAuthenticationWebView(boolean isPasswordFlow) {
+        if (!isPasswordFlow) {
+            parentLayout = (RelativeLayout) findViewById(R.id.authenticatorActivityLayout);
+
+            // Initialise the WebView
+            // see  http://stackoverflow.com/a/8011027/665823 of why we doing this :
+            webView = new WebView(this);
+            parentLayout.addView(webView, new RelativeLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+            //instead of this :
+            //webView = (WebView) findViewById(R.id.WebView);
+
+            webView.getSettings().setJavaScriptEnabled(getResources().getBoolean(R.bool.webview_allow_js));
+            webView.setWebViewClient(new AuthorizationWebViewClient());
+            webView.setVisibility(View.VISIBLE);
+
+            //
+            String authUrl = getAuthenticationUrl();
+            Log.d(TAG, String.format("Initiated activity with authentication WebView and URL '%s'.", authUrl));
+            webView.loadUrl(authUrl);
+        }
+    }
+
+    private class AuthorizationWebViewClient extends WebViewClient {
+
+        /**
+         * Forces the WebView to not load the URL if it can be handled.
+         */
+        @Override
+        public boolean shouldOverrideUrlLoading(WebView view, String url) {
+            return handleUri(url) || super.shouldOverrideUrlLoading(view, url);
+        }
+
+        @SuppressWarnings("deprecation")
+        @Override
+        public void onReceivedError(WebView view, int errorCode, String description, String url) {
+            showErrorDialog("Network error: got %s for %s.", description, url);
+        }
+
+        @TargetApi(Build.VERSION_CODES.M)
+        @Override
+        public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+            showErrorDialog("Network error: got %s for %s.", error.getDescription().toString(), request.getUrl().toString());
+        }
+
+        @Override
+        public void onPageFinished(WebView view, String url) {
+            String cookies = CookieManager.getInstance().getCookie(url);
+            Log.d(TAG, String.format("Cookies for url %1$s : %2$s", url, cookies));
+        }
+    }
+
+    /**
+     * Generate the authentication URL using the OIDC client settings and a generate secure state.
+     * @return url as string
+     */
+    private String getAuthenticationUrl() {
         //Generates a new state to help prevent cross-site scripting attacks
         secureState = OIDCRequestManager.generateStateToken(getString(R.string.op_usualName));
-
         // Generate the authentication URL using the OIDC client settings
-        String authUrl = requestManager.getAuthenticationUrl(secureState);
+        return requestManager.getAuthenticationUrl(secureState);
+    }
 
-        Log.d(TAG, String.format("Initiated activity for getting authorisation with URL '%s'.", authUrl));
-        return authUrl;
+    /**
+     * Tries to handle the given URI as the redirect URI.
+     *
+     * @param uri URI to handle.
+     * @return Whether the URI was handled.
+     */
+    private boolean handleUri(String uri) {
+        if (handleAuthorizationErrors(uri)) {
+            return true;
+        } else if (requestManager.isRedirectUrl(uri)) {
+            finishAuthorization(uri);
+            return true;
+        }
+        return false;
     }
 
     //endregion
 
-    //region Layout setups
-
-    private void setupOIDCOptionsForm() {
-        validateClientButton = (Button) findViewById(R.id.setOIDCClientButton);
-        validateClientButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                setOIDCClientInfo(v);
-            }
-        });
-        flowTypeSpinner = (Spinner) findViewById(R.id.flowTypeSpinner);
-        flowTypeSpinner.setAdapter(new FlowTypesAdapter(this, android.R.layout.simple_spinner_item, OIDCRequestManager.Flows.values()));
-
-        setupFormFloatingLabel();
-    }
-
-    private class FlowTypesAdapter extends ArrayAdapter<OIDCRequestManager.Flows> {
-        public FlowTypesAdapter(Context context, int resource, OIDCRequestManager.Flows[] objects) {
-            super(context, resource, objects);
-        }
-
-        @Override
-        public View getView(int position, View convertView, ViewGroup parent) {
-            if (convertView == null) {
-                convertView = getLayoutInflater().inflate(R.layout.spinner_item_flowtype, parent, false);
-            }
-
-            OIDCRequestManager.Flows item = getItem(position);
-            TextView textView = (TextView) convertView.findViewById(android.R.id.text1);
-            textView.setText(String.format(getString(R.string.OIDCFlowTypeOptionHint), item.name()));
-
-            return convertView;
-        }
-
-        @Override
-        public View getDropDownView(int position, View convertView, ViewGroup parent) {
-            if (convertView == null) {
-                convertView = getLayoutInflater().inflate(R.layout.spinner_item_flowtype, parent, false);
-            }
-
-            OIDCRequestManager.Flows item = getItem(position);
-            TextView textView = (TextView) convertView.findViewById(android.R.id.text1);
-            textView.setText(item.name());
-
-            return convertView;
-        }
-    }
+    //region PasswordGrant form setup
 
     @SuppressWarnings("ConstantConditions")
-    private void setupFormFloatingLabel() {
-        clientIdInputLayout = (TextInputLayout) findViewById(R.id.clientIdInputLayout);
-        clientIdInputLayout.getEditText().addTextChangedListener(new OIDCOptionsTextWatcher(clientIdInputLayout));
+    private void setupPasswordGrantForm(boolean isPasswordFlow) {
+        passwordGrantFormLayout = findViewById(R.id.passwordGrantFormLayout);
+        if (isPasswordFlow) {
+            userNameInputLayout = (TextInputLayout) findViewById(R.id.userNameInputLayout);
+            userNameInputLayout.setHint(getString(R.string.OIDCUserNameOptionHint));
+            userNameInputLayout.getEditText().addTextChangedListener(new OIDCOptionsTextWatcher(userNameInputLayout));
 
-        clientSecretInputLayout = (TextInputLayout) findViewById(R.id.clientSecretInputLayout);
-        clientSecretInputLayout.getEditText().addTextChangedListener(new OIDCOptionsTextWatcher(clientSecretInputLayout));
+            userPasswordInputLayout = (TextInputLayout) findViewById(R.id.userPasswordInputLayout);
+            userPasswordInputLayout.setHint(getString(R.string.OIDCUserPwdOptionHint));
+            userPasswordInputLayout.getEditText().addTextChangedListener(new OIDCOptionsTextWatcher(userPasswordInputLayout));
 
-        redirectUriInputLayout = (TextInputLayout) findViewById(R.id.redirectUriInputLayout);
-        redirectUriInputLayout.getEditText().addTextChangedListener(new OIDCOptionsTextWatcher(redirectUriInputLayout));
+            validatePasswordGrantFormButton = (Button) findViewById(R.id.validateFormButton);
+            validatePasswordGrantFormButton.setText(R.string.OIDCLoginnHint);
+            validatePasswordGrantFormButton.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    EditText userNameEdit = (EditText) findViewById(R.id.userNameEditText);
+                    EditText userPwdEdit = (EditText) findViewById(R.id.userPasswordEditText);
 
-        scopesInputLayout = (TextInputLayout) findViewById(R.id.scopesInputLayout);
-        scopesInputLayout.getEditText().addTextChangedListener(new OIDCOptionsTextWatcher(scopesInputLayout));
+                    String userName = userNameEdit.getText().toString();
+                    String userPwd = userPwdEdit.getText().toString();
+
+                    if (checkPasswordGrantForm(userName, userPwd)) {
+                        PasswordFlowTask task = new PasswordFlowTask();
+                        task.execute(userName, userPwd);
+                    } else {
+                        Log.w(TAG, "Mandatory fields on password grant form missing");
+                    }
+                }
+            });
+            passwordGrantFormLayout.setVisibility(View.VISIBLE);
+        } else {
+            passwordGrantFormLayout.setVisibility(View.GONE);
+        }
     }
 
-    public void setOIDCClientInfo(View view) {
-
-        // Fetch the OIDC client options from the form
-        EditText clientidEdit = (EditText) findViewById(R.id.clientIdEditText);
-        EditText clientSecretEdit = (EditText) findViewById(R.id.clientSecretEditText);
-        EditText redirectUriEdit = (EditText) findViewById(R.id.redirectUriEditText);
-        EditText scopesEdit = (EditText) findViewById(R.id.scopesEditText);
-
-        String clientId = clientidEdit.getText().toString();
-        String clientSecret = clientSecretEdit.getText().toString();
-        String redirectUrl = redirectUriEdit.getText().toString().toLowerCase();
-        String[] scopes;
-        if (TextUtils.isEmpty(scopesEdit.getText().toString())) {
-            scopes = null;
-        } else {
-            scopes = scopesEdit.getText().toString().split(" ");
+    private boolean checkPasswordGrantForm(String userName, String userPwd) {
+        boolean isOk = true;
+        if (TextUtils.isEmpty(userName)){
+            userNameInputLayout.setError(getString(R.string.OIDCOptionsMandatoryError));
+            userNameInputLayout.setErrorEnabled(true);
+            isOk = false;
         }
-        OIDCRequestManager.Flows flowType = (OIDCRequestManager.Flows) flowTypeSpinner.getSelectedItem();
-
-        if (isOIDCClientConfigurationOk(clientId, clientSecret, redirectUrl, scopes)) {
-
-            requestManager = new OIDCRequestManager(this)
-                    .setClientId(clientId)
-                    .setClientSecret(clientSecret)
-                    .setFlowType(flowType)
-                    .setRedirectUrl(redirectUrl)
-//                    .setIssuerId() //TODO: we need another EditText to fill the issuer id
-                    .setScopes(scopes);
-
-            if(requestManager.checkConfiguration()) {
-                // Generate a new authorisation URL
-                String authUrl = getAuthenticationUrl();
-
-                Log.d(TAG, String.format("Initiates WebView workflow with URL '%s'.", authUrl));
-
-                clientFormLayout.setVisibility(View.INVISIBLE);
-                webView.setVisibility(View.VISIBLE);
-                webView.loadUrl(authUrl);
-            } else {
-                //TODO:
-            }
+        if (TextUtils.isEmpty(userPwd)){
+            userPasswordInputLayout.setError(getString(R.string.OIDCOptionsMandatoryError));
+            userPasswordInputLayout.setErrorEnabled(true);
+            isOk = false;
         }
+        return  isOk;
     }
 
     protected static class OIDCOptionsTextWatcher implements TextWatcher {
@@ -325,79 +299,6 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         public void afterTextChanged(Editable s) {
 
         }
-    }
-
-    private boolean isOIDCClientConfigurationOk(String clientId, String secret, String redirectUrl, String[] scopes) {
-        boolean isOk = true;
-        if (TextUtils.isEmpty(clientId)){
-            clientIdInputLayout.setError(getString(R.string.OIDCOptionsMandatoryError));
-            clientIdInputLayout.setErrorEnabled(true);
-            isOk = false;
-        }
-        if (TextUtils.isEmpty(secret)){
-            clientSecretInputLayout.setError(getString(R.string.OIDCOptionsMandatoryError));
-            clientSecretInputLayout.setErrorEnabled(true);
-            isOk = false;
-        }
-        if (TextUtils.isEmpty(redirectUrl)){
-            redirectUriInputLayout.setError(getString(R.string.OIDCOptionsMandatoryError));
-            redirectUriInputLayout.setErrorEnabled(true);
-            isOk = false;
-        }
-        if (scopes == null || scopes.length == 0){
-            scopesInputLayout.setError(getString(R.string.OIDCOptionsMandatoryError));
-            scopesInputLayout.setErrorEnabled(true);
-            isOk = false;
-        }
-
-        return  isOk;
-    }
-
-    private void setupPasswordGrantForm() {
-        setupFormFloatingLabel();
-        flowTypeSpinner = (Spinner) findViewById(R.id.flowTypeSpinner);
-
-        redirectUriInputLayout.setVisibility(View.GONE);
-        scopesInputLayout.setVisibility(View.GONE);
-        flowTypeSpinner.setVisibility(View.GONE);
-
-        clientIdInputLayout.setHint(getString(R.string.OIDCUserNameOptionHint));
-        clientSecretInputLayout.setHint(getString(R.string.OIDCUserPwdOptionHint));
-
-        validateClientButton = (Button) findViewById(R.id.setOIDCClientButton);
-        validateClientButton.setText(R.string.OIDCLoginnHint);
-        validateClientButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                EditText userNameEdit = (EditText) findViewById(R.id.clientIdEditText);
-                EditText userPwdEdit = (EditText) findViewById(R.id.clientSecretEditText);
-
-                String userName = userNameEdit.getText().toString();
-                String userPwd = userPwdEdit.getText().toString();
-
-                if (isPasswordGrantInfoOk(userName, userPwd)) {
-                    PasswordFlowTask task = new PasswordFlowTask();
-                    task.execute(userName, userPwd);
-                }
-            }
-        });
-
-
-    }
-
-    private boolean isPasswordGrantInfoOk(String userName, String userPwd) {
-        boolean isOk = true;
-        if (TextUtils.isEmpty(userName)){
-            clientIdInputLayout.setError(getString(R.string.OIDCOptionsMandatoryError));
-            clientIdInputLayout.setErrorEnabled(true);
-            isOk = false;
-        }
-        if (TextUtils.isEmpty(userPwd)){
-            clientSecretInputLayout.setError(getString(R.string.OIDCOptionsMandatoryError));
-            clientSecretInputLayout.setErrorEnabled(true);
-            isOk = false;
-        }
-        return  isOk;
     }
 
     //endregion
@@ -522,51 +423,6 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         }
         else {
             return false;
-        }
-    }
-
-    /**
-     * Tries to handle the given URI as the redirect URI.
-     *
-     * @param uri URI to handle.
-     * @return Whether the URI was handled.
-     */
-    private boolean handleUri(String uri) {
-        if (handleAuthorizationErrors(uri)) {
-            return true;
-        } else if (requestManager.isRedirectUrl(uri)) {
-            finishAuthorization(uri);
-            return true;
-        }
-        return false;
-    }
-
-    private class AuthorizationWebViewClient extends WebViewClient {
-
-        /**
-         * Forces the WebView to not load the URL if it can be handled.
-         */
-        @Override
-        public boolean shouldOverrideUrlLoading(WebView view, String url) {
-            return handleUri(url) || super.shouldOverrideUrlLoading(view, url);
-        }
-
-        @SuppressWarnings("deprecation")
-        @Override
-        public void onReceivedError(WebView view, int errorCode, String description, String url) {
-            showErrorDialog("Network error: got %s for %s.", description, url);
-        }
-
-        @TargetApi(Build.VERSION_CODES.M)
-        @Override
-        public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-            showErrorDialog("Network error: got %s for %s.", error.getDescription().toString(), request.getUrl().toString());
-        }
-
-        @Override
-        public void onPageFinished(WebView view, String url) {
-            String cookies = CookieManager.getInstance().getCookie(url);
-            Log.d(TAG, String.format("Cookies for url %1$s : %2$s", url, cookies));
         }
     }
 
@@ -848,7 +704,6 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
     public static Intent createIntentForReAuthorization(Context context, String accountName) {
         Intent intent = new Intent(context, AuthenticatorActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        intent.putExtra(AuthenticatorActivity.KEY_PRESENT_OPTS_FORM, false);
         intent.putExtra(AuthenticatorActivity.KEY_ACCOUNT_NAME, accountName);
         return intent;
     }
@@ -863,7 +718,6 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
     public static Intent createIntentForAccountCreation(Context context, String accountName) {
         Intent intent = new Intent(context, AuthenticatorActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        intent.putExtra(AuthenticatorActivity.KEY_PRESENT_OPTS_FORM, false);
         intent.putExtra(AuthenticatorActivity.KEY_ACCOUNT_NAME, accountName);
         intent.putExtra(AuthenticatorActivity.KEY_IS_NEW_ACCOUNT, true);
         return intent;
