@@ -78,4 +78,8 @@ public class AccountSensitiveDataStorageUtils {
         accountManager.setAuthToken(account, tokenType, dataEncUtils.encrypt(data));
         return true;
     }
+
+    public void invalidateStringData(AccountManager accountManager, Account account, String data) throws UserNotAuthenticatedWrapperException {
+        accountManager.invalidateAuthToken(account.type, dataEncUtils.encrypt(data));
+    }
 }

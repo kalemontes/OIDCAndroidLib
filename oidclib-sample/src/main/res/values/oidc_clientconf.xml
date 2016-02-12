@@ -1,13 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<!--
- Stores OpenID Connect client configuration. This should not be used in production without obfuscation.
- If you want to hide your keys, you should obfuscate them using ProGuard (with added manual obfuscation),
- DexGuard or something else.
-
- The strings in this file are not to be translated.
+<!-- Stores OpenID Connect client configuration. This should not be used in production.
+ If you want to hide your keys, you should obfuscate them using ProGuard
+ (with added manual obfuscation), DexGuard or something else.
 -->
 <resources>
+    <!-- Set to true when using an OAuth2 limited provider instead of an OIDC provider. The lib will
+    adapt it's requests to match oauth2 protocol only instead of OIDC (no idToken) -->
+    <bool name="oidc_oauth2only">false</bool>
+
     <!-- OIDC client information you received from your OIDC provider -->
     <string name="oidc_clientId">MyClientID</string>
     <string name="oidc_clientSecret">ItsPassword</string>
@@ -32,4 +33,9 @@
     is not suppose to be an oidc flow.
     For more info see http://openid.net/specs/openid-connect-core-1_0.html#Authentication -->
     <string name="oidc_flowType">Code</string>
+
+    <!-- Verifiable Identifier for an Issuer. An Issuer Identifier is a case sensitive URL using the
+     https scheme that contains scheme, host, and optionally, port number and path components and no
+     query or fragment components. -->
+    <string name="oidc_issuerId">http://example.com</string>
 </resources>

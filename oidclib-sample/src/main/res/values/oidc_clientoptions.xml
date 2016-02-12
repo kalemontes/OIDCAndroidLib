@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!-- Stores OpenID Connect OPTIONAL Authentication Request parameters as described in
+    http://openid.net/specs/openid-connect-core-1_0.html#AuthRequest -->
+<resources>
+    <string-array name="oidc_authextras">
+        <item>prompt|login</item>
+        <item>access_type|offline</item>
+    </string-array>
+
+    <string name="oidc_encryptKeyAlias">oidcEncryptionKey</string>
+
+    <bool name="oidc_encryptKeyAskPin">false</bool>
+
+    <integer name="oidc_encryptKeyPinDuration">0</integer>
+
+    <bool name="webview_allow_js">true</bool>
+</resources>

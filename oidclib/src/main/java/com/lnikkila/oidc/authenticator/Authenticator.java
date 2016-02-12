@@ -14,8 +14,7 @@ import android.util.Log;
 import com.google.api.client.auth.oauth2.TokenResponse;
 import com.google.api.client.auth.oauth2.TokenResponseException;
 import com.lnikkila.oidc.OIDCAccountManager;
-import com.lnikkila.oidc.OIDCUtils;
-import com.lnikkila.oidc.R;
+import com.lnikkila.oidc.OIDCRequestManager;
 import com.lnikkila.oidc.security.UserNotAuthenticatedWrapperException;
 
 import java.io.IOException;
@@ -41,14 +40,7 @@ public class Authenticator extends AbstractAccountAuthenticator {
 
     protected final Context context;
     protected final OIDCAccountManager accountManager;
-
-    protected final String tokenEndpoint;
-
-    protected final String clientId;
-    protected final String clientSecret;
-    protected final String redirectUrl;
-    protected final String[] scopes;
-    protected final String flowType;
+    protected final OIDCRequestManager requestManager;
 
     public static final String TOKEN_TYPE_ID = "com.lnikkila.oidcsample.TOKEN_TYPE_ID";
     public static final String TOKEN_TYPE_ACCESS = "com.lnikkila.oidcsample.TOKEN_TYPE_ACCESS";
@@ -59,14 +51,7 @@ public class Authenticator extends AbstractAccountAuthenticator {
         this.context = context;
 
         this.accountManager = new OIDCAccountManager(context);
-
-        this.tokenEndpoint = this.context.getString(R.string.op_tokenEndpoint);
-
-        this.clientId      = this.context.getString(R.string.oidc_clientId);
-        this.clientSecret  = this.context.getString(R.string.oidc_clientSecret);
-        this.redirectUrl   = this.context.getString(R.string.oidc_redirectUrl);
-        this.scopes        = this.context.getResources().getStringArray(R.array.oidc_scopes);
-        this.flowType      = this.context.getString(R.string.oidc_flowType);
+        this.requestManager = new OIDCRequestManager(context);
 
         Log.d(TAG, "Authenticator created.");
     }
@@ -181,33 +166,19 @@ public class Authenticator extends AbstractAccountAuthenticator {
      */
     protected void refreshTokens(Account account, String refreshToken) throws TokenResponseException, UserNotAuthenticatedWrapperException {
         try {
-            if (checkOIDCClientConfiguration(clientId, clientSecret, redirectUrl, scopes, flowType)) {
-                Log.d(TAG, "The OIDC client options are correctly set.");
-
-                TokenResponse tokenResponse = OIDCUtils.refreshTokens(
-                        tokenEndpoint, clientId, clientSecret, scopes, refreshToken);
-
-                Log.d(TAG, "Got new tokens.");
-                accountManager.saveTokens(account, tokenResponse);
-            }
-            else {
-                // The OIDC client options are NOT set.
-                Log.e(TAG, "OIDC client options are missing or not correctly set");
-                throw new IOException("OIDC client options are missing or not correctly set");
-            }
-        }
-        catch (TokenResponseException e) {
+            TokenResponse tokenResponse = requestManager.refreshTokens(refreshToken);
+            Log.d(TAG, "Got new tokens.");
+            accountManager.saveTokens(account, tokenResponse);
+        } catch (TokenResponseException e) {
             //If token has expired propagate the exception, else just treat it like an IOException
             if(e.getStatusCode() == HTTP_BAD_REQUEST && e.getContent().contains("invalid_grant")) {
                 Log.d(TAG, "Refresh token expired response detected");
                 throw e; //TODO: maybe we should make a custom exception class to handle this?
-            }
-            else {
+            } else {
                 // There's not much we can do if we get here
                 Log.e(TAG, "Couldn't get new tokens.", e);
             }
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             // There's not much we can do if we get here
             Log.e(TAG, "Couldn't get new tokens.", e);
         }
@@ -255,73 +226,9 @@ public class Authenticator extends AbstractAccountAuthenticator {
      * set to false if OIDC client correctly options are set (true otherwise).
      */
     protected Intent createIntentForAuthorization(AccountAuthenticatorResponse response) {
-        Intent intent = null;
-
-        if (checkOIDCClientConfiguration(clientId, clientSecret, redirectUrl, scopes, flowType)) {
-            intent = new Intent(context, AuthenticatorActivity.class);
-            intent.putExtra(AccountManager.KEY_ACCOUNT_AUTHENTICATOR_RESPONSE, response);
-        }
-        else {
-            Log.e(TAG, "OIDC client options are missing or not correctly set");
-        }
-
+        Intent intent = new Intent(context, AuthenticatorActivity.class);
+        intent.putExtra(AccountManager.KEY_ACCOUNT_AUTHENTICATOR_RESPONSE, response);
         return intent;
-    }
-
-    /**
-     * Checks if OIDC client settings are correctly set.
-     * @return true if all expected settings are set, false otherwise.
-     */
-    protected boolean checkOIDCClientConfiguration(String clientId, String clientSecret, String redirectUrl, String[] scopes, String flowType) {
-        boolean isConfigOk = false;
-
-        if (!TextUtils.isEmpty(flowType) && OIDCUtils.isSupportedFlow(flowType)) {
-            OIDCUtils.Flows supportedFlow = OIDCUtils.Flows.valueOf(flowType);
-
-            // RFC6749 https://tools.ietf.org/html/rfc6749#section-2.3  says that client_secret are OPTIONAL
-            // and if not set it usually means that the client is public and does not require to authenticate
-            // with the authorization server. When client_secret is set we will consider that client is
-            // confidential and as for now we will only support HTTP Basic authentication to authenticate
-            //  with the authorization server (others like public/private key pair, etc. are not yet supported).
-            if (TextUtils.isEmpty(clientSecret)) {
-                Log.d(TAG, "Undefined client_secret, OIDC client is public");
-            } else {
-                Log.d(TAG, "OIDC client is confidential and will be using HTTP Basic authentication");
-            }
-
-            // RFC6749 https://tools.ietf.org/html/rfc6749#section-3.3 says that scopes are OPTIONAL
-            // and if omited by client it means to use pre-defined default value or the authorization server fails
-            if (scopes.length == 0) {
-                Log.w(TAG, "Undefined scopes, OIDC client will use authorization server pre-defined default values");
-            }
-
-            switch (supportedFlow) {
-                case Code:
-                case Implicit:
-                case Hybrid :
-                    isConfigOk =
-                            !TextUtils.isEmpty(clientId) &&
-                            // RFC6749 https://tools.ietf.org/html/rfc6749#section-4.1.1 says this is OPTIONAL
-                            // but we need this to know when the WebView should to stop following redirects
-                            !TextUtils.isEmpty(redirectUrl);
-                    break;
-                case Password:
-                    // RFC6749 https://tools.ietf.org/html/rfc6749#section-4.3.2 we don't need to check anything
-                    // here because resource owner username/password will be set by a form later on. We know that
-                    // this is not the way that it should be (username/password should be already be set on OIDC
-                    // client and be check if they are set here). Also this flow should NOT be use by an
-                    // Android App, this flow was added for completeness.
-                    Log.w(TAG, "Please be sure you know what you are doing when using the 'password' flow");
-                    isConfigOk = true;
-                    break;
-                default:
-                    Log.wtf(TAG, "An new/unknown flow type was added but it's configuration checks where not implemented");
-                    break;
-            }
-        } else {
-            Log.e(TAG, "Undefined or unsupported flow type, check your OIDC client configuration file 'res/values/oidc_clientconfig.xml'");
-        }
-        return isConfigOk;
     }
 
 }

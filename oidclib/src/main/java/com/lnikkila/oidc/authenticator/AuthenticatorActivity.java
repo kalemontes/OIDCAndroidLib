@@ -3,6 +3,7 @@ package com.lnikkila.oidc.authenticator;
 import android.accounts.Account;
 import android.accounts.AccountAuthenticatorActivity;
 import android.accounts.AccountManager;
+import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.app.AlertDialog;
 import android.app.KeyguardManager;
@@ -13,7 +14,6 @@ import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
-import android.support.annotation.Nullable;
 import android.support.design.widget.TextInputLayout;
 import android.text.Editable;
 import android.text.TextUtils;
@@ -26,19 +26,15 @@ import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.RelativeLayout;
-import android.widget.Spinner;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import com.google.api.client.auth.oauth2.TokenResponse;
 import com.google.api.client.auth.openidconnect.IdTokenResponse;
-import com.google.api.client.json.gson.GsonFactory;
 import com.lnikkila.oidc.OIDCAccountManager;
-import com.lnikkila.oidc.OIDCUtils;
+import com.lnikkila.oidc.OIDCRequestManager;
 import com.lnikkila.oidc.R;
 import com.lnikkila.oidc.minsdkcompat.CompatUri;
 import com.lnikkila.oidc.security.UserNotAuthenticatedWrapperException;
@@ -68,36 +64,24 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
 
     public static final int ASK_USER_ENCRYPT_PIN_REQUEST_CODE = 1;
 
-    public static final String KEY_PRESENT_OPTS_FORM    = "com.lnikkila.oidc.KEY_PRESENT_OPTS_FORM";
     public static final String KEY_IS_NEW_ACCOUNT       = "com.lnikkila.oidc.KEY_IS_NEW_ACCOUNT";
     public static final String KEY_ACCOUNT_NAME         = "com.lnikkila.oidc.KEY_ACCOUNT_NAME";
 
-    protected String authorizationEnpoint;
-    protected String tokenEndpoint;
-    protected String userInfoEndpoint;
-
     private OIDCAccountManager accountManager;
+    private OIDCRequestManager requestManager;
     private KeyguardManager keyguardManager;
     private Account account;
     private boolean isNewAccount;
 
-    protected boolean useOAuth2Only;
-    protected String clientId;
-    protected String clientSecret;
-    protected String redirectUrl;
-    protected String[] scopes;
-    protected OIDCUtils.Flows flowType;
     protected String secureState;
 
     /*package*/ RelativeLayout parentLayout;
     /*package*/ WebView webView;
-    /*package*/ View clientFormLayout;
-    /*package*/ TextInputLayout clientIdInputLayout;
-    /*package*/ TextInputLayout clientSecretInputLayout;
-    /*package*/ TextInputLayout redirectUriInputLayout;
-    /*package*/ TextInputLayout scopesInputLayout;
-    /*package*/ Button validateClientButton;
-    /*package*/ Spinner flowTypeSpinner;
+
+    /*package*/ View passwordGrantFormLayout;
+    /*package*/ TextInputLayout userNameInputLayout;
+    /*package*/ TextInputLayout userPasswordInputLayout;
+    /*package*/ Button validatePasswordGrantFormButton;
 
     //region Activity Lifecycle
 
@@ -105,13 +89,6 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_authentication);
-
-        authorizationEnpoint = getString(R.string.op_authorizationEnpoint);
-        tokenEndpoint = getString(R.string.op_tokenEndpoint);
-        userInfoEndpoint = getString(R.string.op_userInfoEndpoint);
-
-        accountManager = new OIDCAccountManager(this);
-        keyguardManager = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
 
         Bundle extras = getIntent().getExtras();
 
@@ -121,64 +98,20 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         // In case we're renewing authorisation, we also got an Account object that we're supposed
         // to work with.
         String accountName = extras.getString(KEY_ACCOUNT_NAME);
+
+        accountManager = new OIDCAccountManager(this);
+        keyguardManager = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
+        // starts the request manager with the OIDC client setting in /res/values/oidc_clientconf.xml
+        requestManager = new OIDCRequestManager(this);
+
+
         if (accountName != null) {
             account = accountManager.getAccountByName(accountName);
         }
 
-        // In case that the needed OIDC options are not set, present form to set them in order to create the authentication URL
-        boolean needsOptionsForm = extras.getBoolean(KEY_PRESENT_OPTS_FORM, false);
-
-        parentLayout = (RelativeLayout) findViewById(R.id.authenticatorActivityLayout);
-
-        // Initialise the WebView
-        // see  http://stackoverflow.com/a/8011027/665823 of why we doing this :
-        webView = new WebView(this);
-        parentLayout.addView(webView, new RelativeLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT));
-        //instead of this :
-        //webView = (WebView) findViewById(R.id.WebView);
-
-        //TODO: Enable this if your authorisation page requires JavaScript
-        //webView.getSettings().setJavaScriptEnabled(true);
-        webView.setWebViewClient(new AuthorizationWebViewClient());
-
-        // Initialise the OIDC client definition form
-        clientFormLayout = findViewById(R.id.clientFormLayout);
-
-        if (needsOptionsForm) {
-            //OIDC options form container
-            setupOIDCOptionsForm();
-
-            webView.setVisibility(View.GONE);
-            clientFormLayout.setVisibility(View.VISIBLE);
-
-            Log.d(TAG, "Initiated activity for completing OIDC client options.");
-        }
-        else {
-            // Fetch the OIDC client options
-            useOAuth2Only = this.getResources().getBoolean(R.bool.oidc_oauth2only);
-            clientId = this.getString(R.string.oidc_clientId);
-            clientSecret = this.getString(R.string.oidc_clientSecret);
-            redirectUrl = this.getString(R.string.oidc_redirectUrl).toLowerCase();
-            scopes = this.getResources().getStringArray(R.array.oidc_scopes);
-            flowType = OIDCUtils.Flows.valueOf(this.getString(R.string.oidc_flowType));
-
-            //FIXME realm = extras.getString(KEY_OPT_OIDC_CLIENT_REALM);
-
-            if (flowType == OIDCUtils.Flows.Password) {
-                clientFormLayout.setVisibility(View.VISIBLE);
-                webView.setVisibility(View.GONE);
-                setupPasswordGrantForm();
-
-                Log.d(TAG, "Initiated activity for password grant form.");
-            } else {
-                clientFormLayout.setVisibility(View.GONE);
-                webView.setVisibility(View.VISIBLE);
-                String authUrl = getAuthenticationUrl();
-                webView.loadUrl(authUrl);
-            }
-        }
+        boolean isPasswordFlow = requestManager.getFlowType() == OIDCRequestManager.Flows.Password;
+        initAuthenticationWebView(isPasswordFlow);
+        setupPasswordGrantForm(isPasswordFlow);
     }
 
     @Override
@@ -200,162 +133,149 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
     protected void onDestroy() {
         super.onDestroy();
         //Handles possible webView leak : http://stackoverflow.com/a/8011027/665823
-        parentLayout.removeAllViews();
-        webView.destroy();
+        if (parentLayout != null) parentLayout.removeAllViews();
+        if(webView != null) webView.destroy();
     }
 
     //endregion
 
-    //region Requests to the Identity Provider
+    //region Authentication WebView
 
-    protected String getAuthenticationUrl() {
-        //Generates a new state to help prevent cross-site scripting attacks
-        secureState = OIDCUtils.generateStateToken(getString(R.string.op_usualName));
+    @SuppressLint("SetJavaScriptEnabled")
+    private void initAuthenticationWebView(boolean isPasswordFlow) {
+        if (!isPasswordFlow) {
+            parentLayout = (RelativeLayout) findViewById(R.id.authenticatorActivityLayout);
 
-        // Generate the authentication URL using the OIDC client options
-        String authUrl = OIDCUtils.newAuthenticationUrl(
-                authorizationEnpoint,
-                flowType,
-                clientId,
-                redirectUrl,
-                scopes,
-                secureState);
+            // Initialise the WebView
+            // see  http://stackoverflow.com/a/8011027/665823 of why we doing this :
+            webView = new WebView(this);
+            parentLayout.addView(webView, new RelativeLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+            //instead of this :
+            //webView = (WebView) findViewById(R.id.WebView);
 
-        Log.d(TAG, String.format("Initiated activity for getting authorisation with URL '%s'.", authUrl));
-        return authUrl;
-    }
-
-    @Nullable
-    protected TokenResponse requestAccessTokenWithAuthCode(String authCode) {
-        TokenResponse response = null;
-
-        try {
-            response = OIDCUtils.requestTokensWithCodeGrant(
-                    tokenEndpoint,
-                    redirectUrl,
-                    clientId,
-                    clientSecret,
-                    authCode,
-                    useOAuth2Only);
-        } catch (IOException e) {
-            Log.e(TAG, "Could not get response.", e);
-        }
-        return response;
-    }
-
-    @Nullable
-    protected TokenResponse requestAccessTokenWithUserNamePassword(String userName, String userPwd) {
-        TokenResponse response = null;
-        try {
-            response = OIDCUtils.requestTokensWithPasswordGrant(
-                    tokenEndpoint,
-                    clientId,
-                    clientSecret,
-                    scopes,
-                    userName,
-                    userPwd);
-        } catch (IOException e) {
-            Log.e(TAG, "Could not get response.", e);
-        }
-
-        return response;
-    }
-
-    //endregion
-
-    //region Layout setups
-
-    private void setupOIDCOptionsForm() {
-        validateClientButton = (Button) findViewById(R.id.setOIDCClientButton);
-        validateClientButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                setOIDCClientInfo(v);
-            }
-        });
-        flowTypeSpinner = (Spinner) findViewById(R.id.flowTypeSpinner);
-        flowTypeSpinner.setAdapter(new FlowTypesAdapter(this, android.R.layout.simple_spinner_item, OIDCUtils.Flows.values()));
-
-        setupFormFloatingLabel();
-    }
-
-    private class FlowTypesAdapter extends ArrayAdapter<OIDCUtils.Flows> {
-        public FlowTypesAdapter(Context context, int resource, OIDCUtils.Flows[] objects) {
-            super(context, resource, objects);
-        }
-
-        @Override
-        public View getView(int position, View convertView, ViewGroup parent) {
-            if (convertView == null) {
-                convertView = getLayoutInflater().inflate(R.layout.spinner_item_flowtype, parent, false);
-            }
-
-            OIDCUtils.Flows item = getItem(position);
-            TextView textView = (TextView) convertView.findViewById(android.R.id.text1);
-            textView.setText(String.format(getString(R.string.OIDCFlowTypeOptionHint), item.name()));
-
-            return convertView;
-        }
-
-        @Override
-        public View getDropDownView(int position, View convertView, ViewGroup parent) {
-            if (convertView == null) {
-                convertView = getLayoutInflater().inflate(R.layout.spinner_item_flowtype, parent, false);
-            }
-
-            OIDCUtils.Flows item = getItem(position);
-            TextView textView = (TextView) convertView.findViewById(android.R.id.text1);
-            textView.setText(item.name());
-
-            return convertView;
-        }
-    }
-
-    @SuppressWarnings("ConstantConditions")
-    private void setupFormFloatingLabel() {
-        clientIdInputLayout = (TextInputLayout) findViewById(R.id.clientIdInputLayout);
-        clientIdInputLayout.getEditText().addTextChangedListener(new OIDCOptionsTextWatcher(clientIdInputLayout));
-
-        clientSecretInputLayout = (TextInputLayout) findViewById(R.id.clientSecretInputLayout);
-        clientSecretInputLayout.getEditText().addTextChangedListener(new OIDCOptionsTextWatcher(clientSecretInputLayout));
-
-        redirectUriInputLayout = (TextInputLayout) findViewById(R.id.redirectUriInputLayout);
-        redirectUriInputLayout.getEditText().addTextChangedListener(new OIDCOptionsTextWatcher(redirectUriInputLayout));
-
-        scopesInputLayout = (TextInputLayout) findViewById(R.id.scopesInputLayout);
-        scopesInputLayout.getEditText().addTextChangedListener(new OIDCOptionsTextWatcher(scopesInputLayout));
-    }
-
-    public void setOIDCClientInfo(View view) {
-
-        // Fetch the OIDC client options from the form
-        EditText clientidEdit = (EditText) findViewById(R.id.clientIdEditText);
-        EditText clientSecretEdit = (EditText) findViewById(R.id.clientSecretEditText);
-        EditText redirectUriEdit = (EditText) findViewById(R.id.redirectUriEditText);
-        EditText scopesEdit = (EditText) findViewById(R.id.scopesEditText);
-
-        clientId = clientidEdit.getText().toString();
-        clientSecret = clientSecretEdit.getText().toString();
-        redirectUrl = redirectUriEdit.getText().toString().toLowerCase();
-        if (TextUtils.isEmpty(scopesEdit.getText().toString())) {
-            scopes = null;
-        }
-        else {
-            scopes = scopesEdit.getText().toString().split(" ");
-        }
-        flowType = (OIDCUtils.Flows) flowTypeSpinner.getSelectedItem();
-
-        if (isOIDCClientInfoOk(clientId, clientSecret, redirectUrl, scopes)) {
-
-            // Generate a new authorisation URL
-            String authUrl = getAuthenticationUrl();
-
-            Log.d(TAG, String.format("Initiates WebView workflow with URL '%s'.", authUrl));
-
-            clientFormLayout.setVisibility(View.INVISIBLE);
+            webView.getSettings().setJavaScriptEnabled(getResources().getBoolean(R.bool.webview_allow_js));
+            webView.setWebViewClient(new AuthorizationWebViewClient());
             webView.setVisibility(View.VISIBLE);
+
+            //
+            String authUrl = getAuthenticationUrl();
+            Log.d(TAG, String.format("Initiated activity with authentication WebView and URL '%s'.", authUrl));
             webView.loadUrl(authUrl);
         }
+    }
+
+    private class AuthorizationWebViewClient extends WebViewClient {
+
+        /**
+         * Forces the WebView to not load the URL if it can be handled.
+         */
+        @Override
+        public boolean shouldOverrideUrlLoading(WebView view, String url) {
+            return handleUri(url) || super.shouldOverrideUrlLoading(view, url);
+        }
+
+        @SuppressWarnings("deprecation")
+        @Override
+        public void onReceivedError(WebView view, int errorCode, String description, String url) {
+            showErrorDialog("Network error: got %s for %s.", description, url);
+        }
+
+        @TargetApi(Build.VERSION_CODES.M)
+        @Override
+        public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+            showErrorDialog("Network error: got %s for %s.", error.getDescription().toString(), request.getUrl().toString());
+        }
+
+        @Override
+        public void onPageFinished(WebView view, String url) {
+            String cookies = CookieManager.getInstance().getCookie(url);
+            Log.d(TAG, String.format("Cookies for url %1$s : %2$s", url, cookies));
+        }
+    }
+
+    /**
+     * Generate the authentication URL using the OIDC client settings and a generate secure state.
+     * @return url as string
+     */
+    private String getAuthenticationUrl() {
+        //Generates a new state to help prevent cross-site scripting attacks
+        secureState = OIDCRequestManager.generateStateToken(getString(R.string.op_usualName));
+        // Generate the authentication URL using the OIDC client settings
+        return requestManager.getAuthenticationUrl(secureState);
+    }
+
+    /**
+     * Tries to handle the given URI as the redirect URI.
+     *
+     * @param uri URI to handle.
+     * @return Whether the URI was handled.
+     */
+    private boolean handleUri(String uri) {
+        if (handleAuthorizationErrors(uri)) {
+            return true;
+        } else if (requestManager.isRedirectUrl(uri)) {
+            finishAuthorization(uri);
+            return true;
+        }
+        return false;
+    }
+
+    //endregion
+
+    //region PasswordGrant form setup
+
+    @SuppressWarnings("ConstantConditions")
+    private void setupPasswordGrantForm(boolean isPasswordFlow) {
+        passwordGrantFormLayout = findViewById(R.id.passwordGrantFormLayout);
+        if (isPasswordFlow) {
+            userNameInputLayout = (TextInputLayout) findViewById(R.id.userNameInputLayout);
+            userNameInputLayout.setHint(getString(R.string.OIDCUserNameOptionHint));
+            userNameInputLayout.getEditText().addTextChangedListener(new OIDCOptionsTextWatcher(userNameInputLayout));
+
+            userPasswordInputLayout = (TextInputLayout) findViewById(R.id.userPasswordInputLayout);
+            userPasswordInputLayout.setHint(getString(R.string.OIDCUserPwdOptionHint));
+            userPasswordInputLayout.getEditText().addTextChangedListener(new OIDCOptionsTextWatcher(userPasswordInputLayout));
+
+            validatePasswordGrantFormButton = (Button) findViewById(R.id.validateFormButton);
+            validatePasswordGrantFormButton.setText(R.string.OIDCLoginnHint);
+            validatePasswordGrantFormButton.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    EditText userNameEdit = (EditText) findViewById(R.id.userNameEditText);
+                    EditText userPwdEdit = (EditText) findViewById(R.id.userPasswordEditText);
+
+                    String userName = userNameEdit.getText().toString();
+                    String userPwd = userPwdEdit.getText().toString();
+
+                    if (checkPasswordGrantForm(userName, userPwd)) {
+                        PasswordFlowTask task = new PasswordFlowTask();
+                        task.execute(userName, userPwd);
+                    } else {
+                        Log.w(TAG, "Mandatory fields on password grant form missing");
+                    }
+                }
+            });
+            passwordGrantFormLayout.setVisibility(View.VISIBLE);
+        } else {
+            passwordGrantFormLayout.setVisibility(View.GONE);
+        }
+    }
+
+    private boolean checkPasswordGrantForm(String userName, String userPwd) {
+        boolean isOk = true;
+        if (TextUtils.isEmpty(userName)){
+            userNameInputLayout.setError(getString(R.string.OIDCOptionsMandatoryError));
+            userNameInputLayout.setErrorEnabled(true);
+            isOk = false;
+        }
+        if (TextUtils.isEmpty(userPwd)){
+            userPasswordInputLayout.setError(getString(R.string.OIDCOptionsMandatoryError));
+            userPasswordInputLayout.setErrorEnabled(true);
+            isOk = false;
+        }
+        return  isOk;
     }
 
     protected static class OIDCOptionsTextWatcher implements TextWatcher {
@@ -381,79 +301,6 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         }
     }
 
-    private boolean isOIDCClientInfoOk(String clientId, String secret, String redirectUrl, String[] scopes) {
-        boolean isOk = true;
-        if (TextUtils.isEmpty(clientId)){
-            clientIdInputLayout.setError(getString(R.string.OIDCOptionsMandatoryError));
-            clientIdInputLayout.setErrorEnabled(true);
-            isOk = false;
-        }
-        if (TextUtils.isEmpty(secret)){
-            clientSecretInputLayout.setError(getString(R.string.OIDCOptionsMandatoryError));
-            clientSecretInputLayout.setErrorEnabled(true);
-            isOk = false;
-        }
-        if (TextUtils.isEmpty(redirectUrl)){
-            redirectUriInputLayout.setError(getString(R.string.OIDCOptionsMandatoryError));
-            redirectUriInputLayout.setErrorEnabled(true);
-            isOk = false;
-        }
-        if (scopes == null || scopes.length == 0){
-            scopesInputLayout.setError(getString(R.string.OIDCOptionsMandatoryError));
-            scopesInputLayout.setErrorEnabled(true);
-            isOk = false;
-        }
-
-        return  isOk;
-    }
-
-    private void setupPasswordGrantForm() {
-        setupFormFloatingLabel();
-        flowTypeSpinner = (Spinner) findViewById(R.id.flowTypeSpinner);
-
-        redirectUriInputLayout.setVisibility(View.GONE);
-        scopesInputLayout.setVisibility(View.GONE);
-        flowTypeSpinner.setVisibility(View.GONE);
-
-        clientIdInputLayout.setHint(getString(R.string.OIDCUserNameOptionHint));
-        clientSecretInputLayout.setHint(getString(R.string.OIDCUserPwdOptionHint));
-
-        validateClientButton = (Button) findViewById(R.id.setOIDCClientButton);
-        validateClientButton.setText(R.string.OIDCLoginnHint);
-        validateClientButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                EditText userNameEdit = (EditText) findViewById(R.id.clientIdEditText);
-                EditText userPwdEdit = (EditText) findViewById(R.id.clientSecretEditText);
-
-                String userName = userNameEdit.getText().toString();
-                String userPwd = userPwdEdit.getText().toString();
-
-                if (isPasswordGrantInfoOk(userName, userPwd)) {
-                    PasswordFlowTask task = new PasswordFlowTask();
-                    task.execute(userName, userPwd);
-                }
-            }
-        });
-
-
-    }
-
-    private boolean isPasswordGrantInfoOk(String userName, String userPwd) {
-        boolean isOk = true;
-        if (TextUtils.isEmpty(userName)){
-            clientIdInputLayout.setError(getString(R.string.OIDCOptionsMandatoryError));
-            clientIdInputLayout.setErrorEnabled(true);
-            isOk = false;
-        }
-        if (TextUtils.isEmpty(userPwd)){
-            clientSecretInputLayout.setError(getString(R.string.OIDCOptionsMandatoryError));
-            clientSecretInputLayout.setErrorEnabled(true);
-            isOk = false;
-        }
-        return  isOk;
-    }
-
     //endregion
 
     //region Flow handling
@@ -475,7 +322,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
 
         String extractedFragment = redirectUri.getEncodedFragment();
 
-        switch (flowType) {
+        switch (requestManager.getFlowType()) {
             case Implicit: {
                 if (!TextUtils.isEmpty(extractedFragment)) {
                     ImplicitFlowTask task = new ImplicitFlowTask();
@@ -580,53 +427,6 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
     }
 
     /**
-     * Tries to handle the given URI as the redirect URI.
-     *
-     * @param uri URI to handle.
-     * @return Whether the URI was handled.
-     */
-    private boolean handleUri(String uri) {
-        if (handleAuthorizationErrors(uri)) {
-            return true;
-        }
-        else if (uri.startsWith(redirectUrl)) {
-            finishAuthorization(uri);
-            return true;
-        }
-
-        return false;
-    }
-
-    private class AuthorizationWebViewClient extends WebViewClient {
-
-        /**
-         * Forces the WebView to not load the URL if it can be handled.
-         */
-        @Override
-        public boolean shouldOverrideUrlLoading(WebView view, String url) {
-            return handleUri(url) || super.shouldOverrideUrlLoading(view, url);
-        }
-
-        @SuppressWarnings("deprecation")
-        @Override
-        public void onReceivedError(WebView view, int errorCode, String description, String url) {
-            showErrorDialog("Network error: got %s for %s.", description, url);
-        }
-
-        @TargetApi(Build.VERSION_CODES.M)
-        @Override
-        public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-            showErrorDialog("Network error: got %s for %s.", error.getDescription().toString(), request.getUrl().toString());
-        }
-
-        @Override
-        public void onPageFinished(WebView view, String url) {
-            String cookies = CookieManager.getInstance().getCookie(url);
-            Log.d(TAG, String.format("Cookies for url %1$s : %2$s", url, cookies));
-        }
-    }
-
-    /**
      * Abstract task for authorization flows handling.
      */
     private abstract class AuthorizationFlowTask extends AsyncTask<String, Void, Boolean> {
@@ -646,6 +446,15 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
                 showErrorDialog("Could not get ID Token.");
             }
         }
+
+        protected boolean createOrUpdateAccount(TokenResponse response) {
+            if (isNewAccount) {
+                createAccount(response);
+            } else {
+                saveTokens(response);
+            }
+            return true;
+        }
     }
 
     /**
@@ -663,40 +472,11 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         @Override
         protected Boolean doInBackground(String... args) {
             String fragmentPart = args[0];
-
-            Uri tokenExtrationUrl = new Uri.Builder().encodedQuery(fragmentPart).build();
-            String accessToken = tokenExtrationUrl.getQueryParameter("access_token");
-            String idToken = tokenExtrationUrl.getQueryParameter("id_token");
-            String tokenType = tokenExtrationUrl.getQueryParameter("token_type");
-            String expiresInString = tokenExtrationUrl.getQueryParameter("expires_in");
-            Long expiresIn = (!TextUtils.isEmpty(expiresInString)) ? Long.decode(expiresInString) : null;
-
-            String scope = tokenExtrationUrl.getQueryParameter("scope");
-            String returnedState = tokenExtrationUrl.getQueryParameter("state");
-
-            if(secureState.equalsIgnoreCase(returnedState)) {
-                if (TextUtils.isEmpty(accessToken) || TextUtils.isEmpty(idToken) || TextUtils.isEmpty(tokenType) || expiresIn == null) {
-                    return false;
-                } else {
-                    Log.i(TAG, "AuthToken : " + accessToken);
-
-                    IdTokenResponse response = new IdTokenResponse();
-                    response.setAccessToken(accessToken);
-                    response.setIdToken(idToken);
-                    response.setTokenType(tokenType);
-                    response.setExpiresInSeconds(expiresIn);
-                    response.setScope(scope);
-                    response.setFactory(new GsonFactory());
-
-                    if (isNewAccount) {
-                        createAccount(response);
-                    } else {
-                        saveTokens(response);
-                    }
-                    return true;
-                }
-            } else {
-                Log.e(TAG, "Local and returned states don't match");
+            try {
+                TokenResponse response = requestManager.parseTokensFromImplicitResponseFragmentPart(fragmentPart, secureState);
+                return createOrUpdateAccount(response);
+            } catch (IOException e) {
+                Log.e(TAG, "Could not reconstruct a token response from the HTTP fragment", e);
                 return false;
             }
         }
@@ -704,8 +484,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
 
     /**
      * Handles Hybrid flow by extracting asynchronously the authorization code from a Uri fragment
-     * then exchanging it for an {@link IdTokenResponse} by making a request to the
-     * {@link #tokenEndpoint}.
+     * then exchanging it for an {@link IdTokenResponse} by making a request to the token endpoint.
      * <br/>
      * An Uri string containing a Uri fragment is passed as first parameter of the
      * {@link AsyncTask#execute(Object[])} method, i.e :
@@ -718,6 +497,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         @Override
         protected Boolean doInBackground(String... args) {
             String fragmentPart = args[0];
+            boolean didStoreTokens = false;
 
             Uri tokenExtrationUrl = new Uri.Builder().encodedQuery(fragmentPart).build();
             String idToken = tokenExtrationUrl.getQueryParameter("id_token");
@@ -725,33 +505,27 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
             String returnedState = tokenExtrationUrl.getQueryParameter("state");
 
             if(secureState.equalsIgnoreCase(returnedState)) {
-                if (TextUtils.isEmpty(idToken) || TextUtils.isEmpty(authCode)) {
-                    return false;
-                } else {
+                if (!TextUtils.isEmpty(idToken) && !TextUtils.isEmpty(authCode)) {
                     Log.i(TAG, "Requesting access_token with AuthCode : " + authCode);
 
-                    TokenResponse response = requestAccessTokenWithAuthCode(authCode);
-                    if (response == null) {
-                        return false;
-                    } else {
-                        if (isNewAccount) {
-                            createAccount(response);
-                        } else {
-                            saveTokens(response);
-                        }
-                        return true;
+                    //TODO: we already have the idToken and we aren't doing anything with it... why? Will it be returned once more when we get the access token?
+                    try {
+                        TokenResponse response = requestManager.requestTokensWithCodeGrant(authCode);
+                        didStoreTokens = createOrUpdateAccount(response);
+                    } catch (IOException e) {
+                        Log.e(TAG, "Could not get response from the token endpoint", e);
                     }
                 }
             } else {
                 Log.e(TAG, "Local and returned states don't match");
-                return false;
             }
+            return didStoreTokens;
         }
     }
 
     /**
      * Handles Code flow by requesting asynchronously a {@link IdTokenResponse} to the
-     * {@link #tokenEndpoint} using an authorization code.
+     * token endpoint using an authorization code.
      * <br/>
      * The authorization code is passed as first parameter of the
      * {@link AsyncTask#execute(Object[])} method.
@@ -762,25 +536,20 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         protected Boolean doInBackground(String... args) {
             String authCode = args[0];
             String returnedState = args[1];
+            boolean didStoreTokens = false;
 
-            if(secureState.equalsIgnoreCase(returnedState)) {
+            if (secureState.equalsIgnoreCase(returnedState)) {
                 Log.i(TAG, "Requesting access_token with AuthCode : " + authCode);
-
-                TokenResponse response = requestAccessTokenWithAuthCode(authCode);
-                if (response == null) {
-                    return false;
-                } else {
-                    if (isNewAccount) {
-                        createAccount(response);
-                    } else {
-                        saveTokens(response);
-                    }
-                    return true;
+                try {
+                    TokenResponse response = requestManager.requestTokensWithCodeGrant(authCode);
+                    didStoreTokens = createOrUpdateAccount(response);
+                } catch (IOException e) {
+                    Log.e(TAG, "Could not get response from the token endpoint", e);
                 }
             } else {
                 Log.e(TAG, "Local and returned states don't match");
-                return false;
             }
+            return didStoreTokens;
         }
     }
 
@@ -789,29 +558,23 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         protected Boolean doInBackground(String... args) {
             String userName = args[0];
             String userPwd = args[1];
+            boolean didStoreTokens = false;
 
             Log.d(TAG, "Requesting access_token with username : " + userName);
-
-            TokenResponse response = requestAccessTokenWithUserNamePassword(userName, userPwd);
-
-            if (response == null) {
-                return false;
+            try {
+                TokenResponse response = requestManager.requestTokensWithPasswordGrant(userName, userPwd);
+                didStoreTokens = createOrUpdateAccount(response);
+            } catch (IOException e) {
+                Log.e(TAG, "Could not get response from the token endpoint", e);
             }
-            else {
-                if (isNewAccount) {
-                    createAccount(response);
-                } else {
-                    saveTokens(response);
-                }
-
-                return true;
-            }
+            return didStoreTokens;
         }
     }
 
     //endregion
 
     //region Account Management
+    //TODO: this should be handled by the OIDCAccountManager
 
     /**
      * AccountManager expects that each account has a unique name. If a new account has the same name
@@ -846,7 +609,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
                 } else {
                     // If for a reason we can't get the subject or want to use a other claim instead,
                     // we will try to get the `claimAsAccountName` using the UserInfo Endpoint
-                    Map userInfo = OIDCUtils.getUserInfo(userInfoEndpoint, response.getAccessToken());
+                    Map userInfo = requestManager.getUserInfo(response.getAccessToken(), Map.class);
                     if (userInfo.containsKey(claimAsPartOfAccountName)) {
                         String userName = (String) userInfo.get(claimAsPartOfAccountName);
                         accountName = String.format("%1$s : %2$s", getString(R.string.app_name), userName);
@@ -941,7 +704,6 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
     public static Intent createIntentForReAuthorization(Context context, String accountName) {
         Intent intent = new Intent(context, AuthenticatorActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        intent.putExtra(AuthenticatorActivity.KEY_PRESENT_OPTS_FORM, false);
         intent.putExtra(AuthenticatorActivity.KEY_ACCOUNT_NAME, accountName);
         return intent;
     }
@@ -956,7 +718,6 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
     public static Intent createIntentForAccountCreation(Context context, String accountName) {
         Intent intent = new Intent(context, AuthenticatorActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        intent.putExtra(AuthenticatorActivity.KEY_PRESENT_OPTS_FORM, false);
         intent.putExtra(AuthenticatorActivity.KEY_ACCOUNT_NAME, accountName);
         intent.putExtra(AuthenticatorActivity.KEY_IS_NEW_ACCOUNT, true);
         return intent;

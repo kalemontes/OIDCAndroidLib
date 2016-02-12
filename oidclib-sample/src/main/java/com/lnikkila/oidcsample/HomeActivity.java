@@ -1,24 +1,28 @@
 package com.lnikkila.oidcsample;
 
 import android.accounts.Account;
+import android.accounts.AccountManager;
 import android.accounts.AccountManagerCallback;
 import android.accounts.AccountManagerFuture;
 import android.accounts.AuthenticatorException;
 import android.accounts.OperationCanceledException;
 import android.annotation.SuppressLint;
-import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
+import android.content.Intent;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.support.v7.app.AppCompatActivity;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.ProgressBar;
+import android.widget.Toast;
 
 import com.lnikkila.oidc.OIDCAccountManager;
+import com.lnikkila.oidc.authenticator.OIDCClientConfigurationActivity;
 import com.lnikkila.oidc.security.UserNotAuthenticatedWrapperException;
 
 import java.io.IOException;
@@ -31,9 +35,10 @@ import java.util.Map;
  * @author Camilo Montes
  */
 @SuppressLint("SetTextI18n")
-public class HomeActivity extends Activity  {
+public class HomeActivity extends AppCompatActivity {
 
     private static final String TAG = HomeActivity.class.getSimpleName();
+    private static final int RENEW_REFRESH_TOKEN = 2016;
 
     //TODO: set your protected resource url
     private static final String protectedResUrl = "https://www.example.com/res/my_res";
@@ -42,6 +47,7 @@ public class HomeActivity extends Activity  {
 
     private Button loginButton;
     private Button requestButton;
+    private Button logoutButton;
 
     private ProgressBar progressBar;
     private OIDCAccountManager accountManager;
@@ -60,6 +66,7 @@ public class HomeActivity extends Activity  {
 
         loginButton = (Button) findViewById(R.id.loginButton);
         requestButton = (Button) findViewById(R.id.requestButton);
+        logoutButton = (Button) findViewById(R.id.logoutButton);
         progressBar = (ProgressBar) findViewById(R.id.progressBar);
         progressBar.setVisibility(View.INVISIBLE);
 
@@ -74,9 +81,20 @@ public class HomeActivity extends Activity  {
 
         if (availableAccounts.length > 0) {
             requestButton.setVisibility(View.VISIBLE);
+            logoutButton.setVisibility(View.VISIBLE);
         } else {
             requestButton.setVisibility(View.INVISIBLE);
             requestButton.setText(R.string.requestButton);
+            logoutButton.setVisibility(View.INVISIBLE);
+        }
+    }
+
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (resultCode == RESULT_OK) {
+            if (requestCode == RENEW_REFRESH_TOKEN) {
+                new LoginTask().execute(availableAccounts[selectedAccountIndex]);
+            }
         }
     }
 
@@ -155,8 +173,20 @@ public class HomeActivity extends Activity  {
         }
     }
 
+    public void doConfEdit(View view) {
+        // Never use this on a release. The OpenId Connect client configuration should be stored in
+        // a "secure" way (not on user preferences), if possible obfuscated, and not be allow to be edited.
+        // Use it on dev or to test your OpenId Provider only.
+        Intent intent = new Intent(this, OIDCClientConfigurationActivity.class);
+        startActivity(intent);
+    }
+
     public void doRequest(View view) {
         new ProtectedResTask().execute(availableAccounts[selectedAccountIndex]);
+    }
+
+    public void doLogout(View view) {
+        new LogoutTask(false).execute(availableAccounts[selectedAccountIndex]);
     }
 
     //endregion
@@ -172,7 +202,7 @@ public class HomeActivity extends Activity  {
         }
 
         /**
-         * Makes the API request. We could use the OIDCUtils.getUserInfo() method, but we'll do it
+         * Makes the API request. We could use the OIDCRequestManager.getUserInfo() method, but we'll do it
          * like this to illustrate making generic API requests after we've logged in.
          */
         @Override
@@ -181,8 +211,11 @@ public class HomeActivity extends Activity  {
 
             try {
                 return APIUtility.getJson(accountManager, userInfoEndpoint, account, null);
-            } catch (AuthenticatorException | OperationCanceledException |IOException e) {
-                e.printStackTrace(); //FIXME:
+            } catch (IOException e) {
+                Log.w(TAG, "We couldn't fetch userinfo from server", e);
+                handleTokenExpireException(account, e);
+            } catch (AuthenticatorException | OperationCanceledException e) {
+                Log.w(TAG, "Coudln't get access token from accountmanager", e);
             } catch (UserNotAuthenticatedWrapperException e) {
                 //FIXME: we gotta handle this somehow
             }
@@ -198,10 +231,42 @@ public class HomeActivity extends Activity  {
 
             if (result == null) {
                 loginButton.setText("Couldn't get user info");
-                Log.w(TAG, "We couldn't fetch userinfo from server");
             } else {
                 loginButton.setText("Logged in as " + result.get("given_name"));
                 Log.i(TAG, "We manage to login user to server");
+            }
+        }
+
+        private void handleTokenExpireException(Account account, IOException e){
+            if (e.getMessage().contains("Access Token not valid")) {
+                accountManager.invalidateAllAccountTokens(account);
+                Log.i(TAG, "User should authenticate one more");
+                launchExpiredTokensIntent(account);
+            }
+        }
+
+        private void launchExpiredTokensIntent(Account account) {
+            // See https://github.com/kalemontes/OIDCAndroidLib/issues/4
+            try {
+                accountManager.getAccessToken(account, new AccountManagerCallback<Bundle>() {
+                    @Override
+                    public void run(AccountManagerFuture<Bundle> future) {
+                        try {
+                            Bundle bundle = future.getResult();
+                            Intent launch = (Intent) bundle.get(AccountManager.KEY_INTENT);
+                            if (launch != null) {
+                                launch.setFlags(0);
+                                HomeActivity.this.startActivityForResult(launch, RENEW_REFRESH_TOKEN);
+                            }
+                        } catch (OperationCanceledException | IOException | AuthenticatorException e) {
+                            Log.e(TAG, "Coudn't extract AuthenticationActivity lauch intent", e);
+                        }
+                    }
+                });
+            } catch (OperationCanceledException | IOException | AuthenticatorException e) {
+                Log.e(TAG, "Couldn't renew tokens", e);
+            } catch (UserNotAuthenticatedWrapperException e) {
+                //FIXME: we gotta handle this somehow
             }
         }
     }
@@ -243,6 +308,59 @@ public class HomeActivity extends Activity  {
             } else {
                 requestButton.setText(result.toString());
             }
+        }
+    }
+
+    private class LogoutTask extends AsyncTask<Account, Void, Boolean> {
+
+        private boolean requestServerLogout;
+
+        public LogoutTask(boolean requestServerLogout){
+            this.requestServerLogout = requestServerLogout;
+        }
+
+        @Override
+        protected void onPreExecute() {
+            progressBar.setVisibility(View.VISIBLE);
+        }
+
+        @Override
+        protected Boolean doInBackground(Account... args) {
+            Account account = args[0];
+            return !requestServerLogout || requestServerLogout(account);
+        }
+
+        /**
+         * Processes the API's response.
+         */
+        @Override
+        protected void onPostExecute(Boolean result) {
+            progressBar.setVisibility(View.INVISIBLE);
+
+            if (result) {
+                boolean removed = accountManager.removeAccount(availableAccounts[0]);
+                if (removed) {
+                    loginButton.setText(R.string.loginButtonText);
+                    requestButton.setVisibility(View.INVISIBLE);
+                    logoutButton.setVisibility(View.INVISIBLE);
+                    refreshAvailableAccounts();
+
+                    Toast.makeText(HomeActivity.this,
+                            "Session closed",
+                            Toast.LENGTH_SHORT).show();
+                }
+                else {
+                    //TODO: show error message "Couldn't remove account"
+                }
+            } else {
+                //TODO: show error message "Couldn't logout"
+            }
+        }
+
+        private boolean requestServerLogout(Account account) {
+            //TODO: make a request to the OP's revoke endpoint to invalidate the current tokens
+            //See https://github.com/kalemontes/OIDCAndroidLib/issues/5 discution
+            return false;
         }
     }
 
