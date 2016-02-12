@@ -1,6 +1,7 @@
 package com.lnikkila.oidc;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.net.Uri;
 import android.support.annotation.NonNull;
 import android.text.TextUtils;
@@ -97,18 +98,33 @@ public class OIDCRequestManager {
         this.context = context;
 
         this.authorizationEndpoint = this.context.getString(R.string.op_authorizationEnpoint);
-        this.tokenEndpoint          = this.context.getString(R.string.op_tokenEndpoint);
-        this.userInfoEndpoint       = this.context.getString(R.string.op_userInfoEndpoint);
+        this.tokenEndpoint = this.context.getString(R.string.op_tokenEndpoint);
+        this.userInfoEndpoint = this.context.getString(R.string.op_userInfoEndpoint);
 
-        this.useOAuth2      = this.context.getResources().getBoolean(R.bool.oidc_oauth2only);
-
-        this.clientId       = this.context.getString(R.string.oidc_clientId);
-        this.clientSecret   = this.context.getString(R.string.oidc_clientSecret);
-        this.redirectUrl    = this.context.getString(R.string.oidc_redirectUrl);
-        this.scopes         = this.context.getResources().getStringArray(R.array.oidc_scopes);
-        this.flowTypeName   = this.context.getString(R.string.oidc_flowType);
-        this.issuerId       = this.context.getString(R.string.oidc_issuerId);
-        this.extras         = parseStringArray(this.context.getResources().getStringArray(R.array.oidc_authextras));
+        SharedPreferences sharedPreferences = context.getSharedPreferences("oidc_clientconf", Context.MODE_PRIVATE);
+        boolean loadConfigFromUserPrefs = sharedPreferences.getBoolean("oidc_loadfromprefs", false);
+        if(loadConfigFromUserPrefs) {
+            //reads from user preferences --> This should be use only for test purposes
+            this.useOAuth2 = sharedPreferences.getBoolean("oidc_oauth2only", false);
+            this.clientId = sharedPreferences.getString("oidc_clientId", null);
+            this.clientSecret = sharedPreferences.getString("oidc_clientSecret", null);
+            this.redirectUrl = sharedPreferences.getString("oidc_redirectUrl", null);
+            String scopesString = sharedPreferences.getString("oidc_scopes", null);
+            this.scopes = scopesString != null ? scopesString.split(" ") : null;
+            this.flowTypeName = sharedPreferences.getString("oidc_flowType", null);
+            this.issuerId = sharedPreferences.getString("oidc_issuerId", null);
+//            this.extras = parseStringArray(sharedPreferences.getStringSet("oidc_authextras", null));
+        } else {
+            //reads from predefined res/values
+            this.useOAuth2 = this.context.getResources().getBoolean(R.bool.oidc_oauth2only);
+            this.clientId = this.context.getString(R.string.oidc_clientId);
+            this.clientSecret = this.context.getString(R.string.oidc_clientSecret);
+            this.redirectUrl = this.context.getString(R.string.oidc_redirectUrl);
+            this.scopes = this.context.getResources().getStringArray(R.array.oidc_scopes);
+            this.flowTypeName = this.context.getString(R.string.oidc_flowType);
+            this.issuerId = this.context.getString(R.string.oidc_issuerId);
+            this.extras = parseStringArray(this.context.getResources().getStringArray(R.array.oidc_authextras));
+        }
 
         if (!checkConfiguration()) {
             throw new RuntimeException("The OpenId Connect client configuration is not correctly set.");
