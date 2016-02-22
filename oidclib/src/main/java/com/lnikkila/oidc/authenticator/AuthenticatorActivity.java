@@ -11,6 +11,7 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.net.Uri;
+import android.net.http.SslError;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
@@ -22,6 +23,7 @@ import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
+import android.webkit.SslErrorHandler;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebView;
@@ -186,6 +188,17 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity {
         @Override
         public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
             showErrorDialog("Network error: got %s for %s.", error.getDescription().toString(), request.getUrl().toString());
+        }
+
+        @Override
+        public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
+            boolean isSSLDisabled = getResources().getBoolean(R.bool.disable_ssl_check);
+            if (isSSLDisabled){
+                handler.proceed();
+            } else {
+                showErrorDialog("SSL error: got %s for %s.", error.toString(), error.getUrl());
+            }
+
         }
 
         @Override

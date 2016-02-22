@@ -18,14 +18,19 @@ import com.google.api.client.auth.oauth2.TokenResponse;
 import com.google.api.client.auth.openidconnect.IdToken;
 import com.google.api.client.auth.openidconnect.IdTokenResponse;
 import com.google.api.client.auth.openidconnect.IdTokenVerifier;
+import com.google.api.client.extensions.android.AndroidUtils;
 import com.google.api.client.extensions.android.http.AndroidHttp;
 import com.google.api.client.http.BasicAuthentication;
 import com.google.api.client.http.GenericUrl;
+import com.google.api.client.http.HttpTransport;
+import com.google.api.client.http.apache.ApacheHttpTransport;
+import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.client.util.Preconditions;
 import com.google.gson.Gson;
 
 import java.io.IOException;
+import java.security.GeneralSecurityException;
 import java.security.InvalidKeyException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -94,6 +99,8 @@ public class OIDCRequestManager {
     protected String issuerId;
     protected Map<String, String> extras;
 
+    protected boolean isSSLDisabled;
+
     public OIDCRequestManager(Context context) {
         this.context = context;
 
@@ -130,6 +137,7 @@ public class OIDCRequestManager {
             throw new RuntimeException("The OpenId Connect client configuration is not correctly set.");
         }
         this.flowType = Flows.valueOf(flowTypeName);
+        this.isSSLDisabled = this.context.getResources().getBoolean(R.bool.disable_ssl_check);
     }
 
     //region Setters/Getters
@@ -339,7 +347,7 @@ public class OIDCRequestManager {
     public TokenResponse requestTokensWithCodeGrant(String authCode) throws IOException {
 
         AuthorizationCodeTokenRequest request = new AuthorizationCodeTokenRequest(
-                AndroidHttp.newCompatibleTransport(),
+                newCompatibleTransport(),
                 new GsonFactory(),
                 new GenericUrl(tokenEndpoint),
                 authCode
@@ -413,7 +421,7 @@ public class OIDCRequestManager {
         List<String> scopesList = Arrays.asList(scopes);
 
         PasswordTokenRequest request = new PasswordTokenRequest(
-                AndroidHttp.newCompatibleTransport(),
+                newCompatibleTransport(),
                 new GsonFactory(),
                 new GenericUrl(tokenEndpoint),
                 userName,
@@ -549,7 +557,7 @@ public class OIDCRequestManager {
         List<String> scopesList = Arrays.asList(scopes);
 
         RefreshTokenRequest request = new RefreshTokenRequest(
-                AndroidHttp.newCompatibleTransport(),
+                newCompatibleTransport(),
                 new GsonFactory(),
                 new GenericUrl(tokenEndpoint),
                 refreshToken);
@@ -775,4 +783,25 @@ public class OIDCRequestManager {
 
     //endregion
 
+
+    public HttpTransport newCompatibleTransport() {
+        HttpTransport transport;
+        if(isSSLDisabled) {
+            try {
+                if (AndroidUtils.isMinimumSdkLevel(9)) {
+                    transport = new NetHttpTransport.Builder()
+                            .doNotValidateCertificate()
+                            .build();
+                } else {
+                    transport = new ApacheHttpTransport.Builder()
+                            .doNotValidateCertificate()
+                            .build();
+                }
+                return transport;
+            } catch (GeneralSecurityException e) {
+                Log.e(TAG, "Can't use custom http transport", e);
+            }
+        }
+        return  AndroidHttp.newCompatibleTransport();
+    }
 }

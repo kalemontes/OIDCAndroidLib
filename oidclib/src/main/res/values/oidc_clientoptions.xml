@@ -33,4 +33,8 @@
     <!-- Tells the WebView to enable JavaScript execution. Using setJavaScriptEnabled can introduce XSS
     vulnerabilities into you application, review carefully. More info see WebSettings#setJavaScriptEnabled(bool) -->
     <bool name="webview_allow_js">false</bool>
+
+    <!-- WARNING: NEVER EVER EVER set this to true on production! -->
+    <bool name="disable_ssl_check">false</bool>
+
 </resources>
