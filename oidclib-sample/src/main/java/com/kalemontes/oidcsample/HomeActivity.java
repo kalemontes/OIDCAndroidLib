@@ -1,4 +1,4 @@
-package com.lnikkila.oidcsample;
+package com.kalemontes.oidcsample;
 
 import android.accounts.Account;
 import android.accounts.AccountManager;
@@ -21,9 +21,9 @@ import android.widget.Button;
 import android.widget.ProgressBar;
 import android.widget.Toast;
 
-import com.lnikkila.oidc.OIDCAccountManager;
-import com.lnikkila.oidc.authenticator.OIDCClientConfigurationActivity;
-import com.lnikkila.oidc.security.UserNotAuthenticatedWrapperException;
+import com.kalemontes.oidc.OIDCAccountManager;
+import com.kalemontes.oidc.authenticator.OIDCClientConfigurationActivity;
+import com.kalemontes.oidc.security.UserNotAuthenticatedWrapperException;
 
 import java.io.IOException;
 import java.util.Map;

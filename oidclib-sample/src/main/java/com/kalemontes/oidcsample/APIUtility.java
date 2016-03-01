@@ -1,4 +1,4 @@
-package com.lnikkila.oidcsample;
+package com.kalemontes.oidcsample;
 
 import android.accounts.Account;
 import android.accounts.AccountManagerCallback;
@@ -8,8 +8,8 @@ import android.os.Bundle;
 
 import com.github.kevinsawicki.http.HttpRequest;
 import com.google.gson.Gson;
-import com.lnikkila.oidc.OIDCAccountManager;
-import com.lnikkila.oidc.security.UserNotAuthenticatedWrapperException;
+import com.kalemontes.oidc.OIDCAccountManager;
+import com.kalemontes.oidc.security.UserNotAuthenticatedWrapperException;
 
 import java.io.IOException;
 import java.util.Map;

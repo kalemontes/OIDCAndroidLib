@@ -1,4 +1,4 @@
-package com.lnikkila.oidcsample;
+package com.kalemontes.oidcsample;
 
 import android.app.Application;
 import android.test.ApplicationTestCase;

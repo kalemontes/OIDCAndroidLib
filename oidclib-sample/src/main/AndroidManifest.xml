@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools"
-    package="com.lnikkila.oidcsample" >
+    package="com.kalemontes.oidcsample" >
 
     <uses-permission android:name="android.permission.GET_ACCOUNTS" />
     <uses-permission android:name="android.permission.MANAGE_ACCOUNTS" />
@@ -15,21 +15,21 @@
         android:theme="@style/Theme.SampleApp"
         tools:replace="android:theme">
         <activity
-            android:name="com.lnikkila.oidcsample.HomeActivity" >
+            android:name="com.kalemontes.oidcsample.HomeActivity" >
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
         <activity
-            android:name="com.lnikkila.oidc.authenticator.AuthenticatorActivity"
+            android:name="com.kalemontes.oidc.authenticator.AuthenticatorActivity"
             android:theme="@style/Theme.OidcLib" >
         </activity>
         <activity
-            android:name="com.lnikkila.oidc.authenticator.OIDCClientConfigurationActivity" >
+            android:name="com.kalemontes.oidc.authenticator.OIDCClientConfigurationActivity" >
         </activity>
 
-        <service android:name="com.lnikkila.oidc.authenticator.AuthenticatorService">
+        <service android:name="com.kalemontes.oidc.authenticator.AuthenticatorService">
             <intent-filter>
                 <action android:name="android.accounts.AccountAuthenticator" />
             </intent-filter>

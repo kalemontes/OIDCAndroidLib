@@ -5,7 +5,7 @@ android {
     buildToolsVersion '23.0.2'
 
     defaultConfig {
-        applicationId "com.lnikkila.oidcsample"
+        applicationId "com.kalemontes.oidcsample"
         minSdkVersion 9
         targetSdkVersion 23
         versionCode 2
@@ -22,6 +22,6 @@ android {
 dependencies {
     compile fileTree(dir: 'libs', include: ['*.jar'])
 
-    // lnikkila OpenIdConnect Client Library
-    compile project(':oidclib')
+    //https://github.com/kalemontes/OIDCAndroidLib
+    compile project(':openidconnect-android-client')
 }
