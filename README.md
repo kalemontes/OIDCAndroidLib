@@ -56,6 +56,18 @@ compile 'com.kalemontes.oidc:openidconnect-android-client:0.2.1'
 
 ## Configuration
 
+The easiest way to configure the library to access your OpenID Connect provider is to download and edit the following templates :
+
+* [endpoints configuration](https://github.com/kalemontes/OIDCAndroidLib/blob/master/oidclib/src/main/res/values/oidc_endpoints.xml)
+* [client configuration](https://github.com/kalemontes/OIDCAndroidLib/blob/master/oidclib/src/main/res/values/oidc_clientconf.xml)
+
+You can adjust other options using the following templates but please be sure you know what are you doing when modifying theses :
+
+* [other options](https://github.com/kalemontes/OIDCAndroidLib/blob/master/oidclib/src/main/res/values/oidc_clientoptions.xml)
+
+The downloaded templates must be place on your app module ressources directory, under `app/res/values/` as shown
+<img src="https://github.com/kalemontes/OIDCAndroidLib/wiki/images/valuesDir.PNG" alt="ressources directory where to place the templates"/>
+
 > Have a look at the [Wiki](https://github.com/kalemontes/OIDCAndroidLib/wiki) for the [detailed procedure](https://github.com/kalemontes/OIDCAndroidLib/wiki/Using-the-lib).
 
 ## Documentation
