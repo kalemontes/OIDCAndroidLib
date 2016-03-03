@@ -42,17 +42,17 @@ compile 'com.kalemontes.oidc:openidconnect-android-client:0.2.1'
 
 **3. Aar file**
 
-* Download the latest .aar file from the [releases section]()
+* Download the latest .aar file from the [releases section](https://github.com/kalemontes/OIDCAndroidLib/releases)
 * Use the AndroidStudio .jar/.aar native import under `File -> New Module -> Import .JAR/.AAR`
 
-> Have a look at the [Wiki](https://github.com/kalemontes/OIDCAndroidLib/wiki) for the [detailed procedure]().
+> Have a look at the [Wiki](https://github.com/kalemontes/OIDCAndroidLib/wiki) for the [detailed procedure](https://github.com/kalemontes/OIDCAndroidLib/wiki/1.3.-Using-the-aar-library).
 
 **4. Clone repo**
 
 * Clone from `https://github.com/kalemontes/OIDCAndroidLib.git` or `git@github.com:kalemontes/OIDCAndroidLib.git`
 * Use the AndroidStudio gradle project import under `File -> New Module -> Import Gradle Project`
 
-> Have a look at the [Wiki](https://github.com/kalemontes/OIDCAndroidLib/wiki) for the [detailed procedure](https://github.com/kalemontes/OIDCAndroidLib/wiki/Setting-up-the-sample-project).
+> Have a look at the [Wiki](https://github.com/kalemontes/OIDCAndroidLib/wiki) for the [detailed procedure](https://github.com/kalemontes/OIDCAndroidLib/wiki/1.4.-Clone-and-import-modulet).
 
 ## Configuration
 
@@ -68,7 +68,7 @@ You can adjust other options using the following templates but please be sure yo
 The downloaded templates must be place on your app module ressources directory, under `app/res/values/` as shown
 <img src="https://github.com/kalemontes/OIDCAndroidLib/wiki/images/valuesDir.PNG" alt="ressources directory where to place the templates"/>
 
-> Have a look at the [Wiki](https://github.com/kalemontes/OIDCAndroidLib/wiki) for the [detailed procedure](https://github.com/kalemontes/OIDCAndroidLib/wiki/Using-the-lib).
+> Have a look at the [Wiki](https://github.com/kalemontes/OIDCAndroidLib/wiki) for the [detailed procedure](https://github.com/kalemontes/OIDCAndroidLib/wiki/2.-Configure).
 
 ## Documentation
 
