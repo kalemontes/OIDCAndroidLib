@@ -139,8 +139,12 @@ public class SensitiveDataPreApi23 extends SensitiveDataUtils {
     // region SensitiveDataUtils implementation
 
     protected void createAndSaveSecretKey() {
-        SecretKey key = generateKey();
-        saveKey(key);
+        SecretKey key = loadKey();
+        if (key == null) {
+            Log.d(TAG, "Creating encryption key");
+            key = generateKey();
+            saveKey(key);
+        }
     }
 
     protected SecretKey generateKey() {
