@@ -1,3 +1,6 @@
+# Deprecated
+**This library is not longer under active development. I recommand to take a look at https://github.com/openid/AppAuth-Android **
+
 # OIDCAndroidLib
 Android library module for OIDC inspired from https://github.com/learning-layers/android-openid-connect
 
